@@ -1,0 +1,327 @@
+{
+  "problem": {
+    "id": 105677,
+    "difficulty": 4,
+    "index": "G",
+    "title": "Guess How the Ballet Will End",
+    "timeLimit": 0.5,
+    "memLimit": 2048,
+    "description": "### Description\n\nIn ancient Greek theater, the chorus would often dance.\n\nThe dances were a pleasure to watch; all the dancers on stage executed the same movements at the same time, going across the theater, left to right or right to left. Of course, no dancer could ever go past the borders of the scene. So if the instructions would have made them fall off the scene, they would simply have carried out the move until they reached the border and then stayed there until the next move. For instance, if the move said 5 steps to the right but the dancer only had space for two steps, he/she would have taken those two steps and would then have waited on the border for the next move.\n\nYou are excavating a theater and have found extraordinarily well-preserved papyri detailing the sequence of moves the dancers would make during many theater plays, a real treasure trove. The initial positions of the dancers is not known to you, since you have only found the papyri with the moves, and the rest of the instructions and the rest of the plays have been lost.\n\nThe instructions are a sequence of numbers, telling all the dancers to dance 3 steps to the left, 5 steps to the right, etc., all carrying out the same move at the same time.\n\nAdding a coordinate system to the scene, each dancer $i$ starts at the position $(X_i,i)$ and a move only impacts their $X$ coordinate (each dancer dances on his/her own line), so they cannot bump into each other. They also all move at the same speed; moving by $n$ steps means the same change of X coordinate for all dancers, unless they hit the borders as explained above.\n\nYou have figured out that in some cases, because some dancers may need to cut some movements short due to the borders, it may happen that they will all end up in a perfect line (all at the same X position) at the end of the dance. There are so many papyri that you have decided to write a program to find out if this is the case. Maybe you will learn interesting things about Greek dancing, depending on the number of plays where all the dancers end up all aligned.\n\nOf course, you don't know the starting positions of the dancers, nor their number (only that they were at least a dozen), but you think there are some cases where your program will be able to tell for sure that the dancers end up all aligned at the same X position and if so, where.\n\n#### Input\nOn the first two lines of the input:\n  - $R$, an integer, the length of the scene. The valid X positions of the dancers range from 0 (left of the scene) to R (right of the scene). Going beyond that would make the dancers fall of the scene.\n  - $N$, the number of movements the dancers shall carry out.\n\nOn the third line, $N$ integers $d_i$, separated by spaces, the signed lengths of the moves the dancers shall carry out (a positive number means the dancer is moving to the right, a negative number that he/she is moving to the left).\n\n#### Output\nIf you can be sure that all the dancers will end up being aligned at the same X position, a single integer, corresponding to the position (distance from the left of the scene) where all the dancers will end up at the end of the moves.\n\nOtherwise, output the string uncertain .\n\n#### Limits\n  - $1\u2264R\u226410,000,000,000$\n  - $1\u2264N\u22641000$\n  - $\u221210,000,000,000\u2264d_i\u226410,000,000,000$"
+  },
+  "submissions": {
+    "337742716": {
+      "id": 337742716,
+      "creationTimeSeconds": 1757416751,
+      "relativeTimeSeconds": 2147483647,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 10,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "def solve_dancer_alignment():\n    # Read input\n    R = int(input())\n    N = int(input())\n    moves = list(map(int, input().split()))\n\n    # Simulate two extreme cases: dancer starting at 0 and dancer starting at R\n    pos_left = 0   # Dancer starting at leftmost position\n    pos_right = R  # Dancer starting at rightmost position\n\n    # Apply all moves to both dancers\n    for move in moves:\n        # Apply move to left dancer\n        new_pos_left = pos_left + move\n        pos_left = max(0, min(R, new_pos_left))\n\n        # Apply move to right dancer\n        new_pos_right = pos_right + move\n        pos_right = max(0, min(R, new_pos_right))\n\n    # If both extreme dancers end up at the same position,\n    # then all dancers will end up at that position\n    if pos_left == pos_right:\n        print(pos_left)\n    else:\n        print(\"uncertain\")\n\n# Run the solution\nsolve_dancer_alignment()\n"
+    },
+    "312795424": {
+      "id": 312795424,
+      "creationTimeSeconds": 1743163344,
+      "relativeTimeSeconds": 2147483647,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 10,
+      "timeConsumedMillis": 61,
+      "memoryConsumedBytes": 0,
+      "code": "vstup=input()\nv=int(vstup)\n\n\nvstup=input()\n\nc = [int(x) for x in input().split()]\n\n\n\nmi =v\nma =0\n\nfor i in range(len(c)):\n    if ma+c[i]<0:\n        ma=0\n    else:\n        if ma+c[i]>v:\n            ma=v\n        else:\n            ma=ma+c[i]\n\n    if mi+c[i]<0:\n        mi=0\n    else:\n        if mi+c[i]>v:\n            mi=v\n        else:\n            mi=mi+c[i]\n\n\n\nif(mi==ma):\n    print(mi)\nelse:\n    print(\"uncertain\")\n"
+    },
+    "312795326": {
+      "id": 312795326,
+      "creationTimeSeconds": 1743163298,
+      "relativeTimeSeconds": 2147483647,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 3,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "vstup=input()\nv=int(vstup)\n\n\nvstup=input()\n\nc = [int(x) for x in input().split()]\n\n\n\nmi =v\nma =0\n\nfor i in range(len(c)):\n    if ma+c[i]<0:\n        ma=0\n    else:\n        if ma+c[i]>100:\n            ma=100\n        else:\n            ma=ma+c[i]\n\n    if mi+c[i]<0:\n        mi=0\n    else:\n        if mi+c[i]>100:\n            mi=100\n        else:\n            mi=mi+c[i]\n\n\n\nif(mi==ma):\n    print(mi)\nelse:\n    print(\"uncertain\")\n"
+    },
+    "309641083": {
+      "id": 309641083,
+      "creationTimeSeconds": 1741532132,
+      "relativeTimeSeconds": 92,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 10,
+      "timeConsumedMillis": 77,
+      "memoryConsumedBytes": 0,
+      "code": "def find_pos(R, moves):\n    pos1 = 0\n    pos2 = R\n    for i in moves:\n        pos1 += i\n        pos2 += i\n        if pos1 < 0:\n            pos1 = 0\n        elif pos1 > R:\n            pos1 = R\n        if pos2 < 0:\n            pos2 = 0\n        elif pos2 > R:\n            pos2 = R\n    return pos1 if pos1 == pos2 else \"uncertain\"\n\n\nR = int(input())\nN = int(input())\nprint(find_pos(R, list(map(int, input().split()))))\n"
+    },
+    "309616004": {
+      "id": 309616004,
+      "creationTimeSeconds": 1741518454,
+      "relativeTimeSeconds": 9754,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 10,
+      "timeConsumedMillis": 77,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    W = input()\n    lista = [int(x) for x in W.split()]\n    suma = 0\n    xd = -1\n    ans = -1\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    for j in range(k):\n        maks_lok = max(lista[j], maks_lok + lista[j])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[j], minimum_lok + lista[j])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N :\n            xd =N\n            ans=j\n            break\n        elif minimum <=-N:\n            xd =0\n            ans=j\n            break\n\n\n    if ans ==-1:\n        print(\"uncertain\")\n        return\n\n    for i in range(ans+1,k):\n        suma+=lista[i]\n        if suma >=N:\n            xd = N\n            suma = 0\n        elif suma < -N:\n            suma = 0\n            xd = 0\n\n    if xd == N:\n        print(min(N, N + suma))\n    else:\n        print(max(0, suma))\n\nmain()"
+    },
+    "309615928": {
+      "id": 309615928,
+      "creationTimeSeconds": 1741518421,
+      "relativeTimeSeconds": 9721,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 2,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    W = input()\n    lista = [int(x) for x in W.split()]\n    suma = 0\n    xd = -1\n    ans = -1\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    for j in range(k):\n        maks_lok = max(lista[j], maks_lok + lista[j])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[j], minimum_lok + lista[j])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N :\n            xd =N\n            ans=j\n            break\n        elif minimum <=-N:\n            xd =0\n            ans=j\n            break\n\n\n    if ans ==-1:\n        print(\"uncertain\")\n        return\n\n    for i in range(1,k):\n        suma+=lista[i]\n        if suma >=N:\n            xd = N\n            suma = 0\n        elif suma < -N:\n            suma = 0\n            xd = 0\n\n    if xd == N:\n        print(min(N, N + suma))\n    else:\n        print(max(0, suma))\n\nmain()\n"
+    },
+    "309615494": {
+      "id": 309615494,
+      "creationTimeSeconds": 1741518163,
+      "relativeTimeSeconds": 9463,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 10,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    W = input()\n    lista = [int(x) for x in W.split()]\n    suma = 0\n    xd = -1\n    ans = -1\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    for j in range(k):\n        maks_lok = max(lista[j], maks_lok + lista[j])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[j], minimum_lok + lista[j])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N :\n            xd =N\n            ans=j\n            break\n        elif minimum <=-N:\n            xd =0\n            ans=j\n            break\n\n\n    if ans ==-1:\n        print(\"uncertain\")\n        return\n\n    for i in range(j+1,k):\n        suma+=lista[i]\n        if suma >=N:\n            xd = N\n            suma = 0\n        elif suma < -N:\n            suma = 0\n            xd = 0\n\n    if xd == N:\n        print(min(N, N + suma))\n    else:\n        print(max(0, suma))\n\nmain()\n"
+    },
+    "309613623": {
+      "id": 309613623,
+      "creationTimeSeconds": 1741517129,
+      "relativeTimeSeconds": 8429,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 8,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return\n    if xd == N:\n        print(min(N, N + suma))\n    else:\n        print(max(0, suma))\nmain()\n"
+    },
+    "309612597": {
+      "id": 309612597,
+      "creationTimeSeconds": 1741516561,
+      "relativeTimeSeconds": 7861,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 0,
+      "timeConsumedMillis": 46,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    W = input()\n    lista = [int(x) for x in W.split()]\n    suma = 0\n    xd = False\n    for i in range(k):\n        suma+=lista[i]\n        if suma >=N:\n            xd = True\n            suma = 0\n        elif suma < 0:\n            suma = 0\n            xd = True\n    if xd == False:\n        print(\"uncertain\")\n        return\n    print(suma)\nmain()"
+    },
+    "309609805": {
+      "id": 309609805,
+      "creationTimeSeconds": 1741514991,
+      "relativeTimeSeconds": 6291,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 3,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma >= N:\n        ans = N-1\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309609736": {
+      "id": 309609736,
+      "creationTimeSeconds": 1741514953,
+      "relativeTimeSeconds": 6253,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 2,
+      "timeConsumedMillis": 77,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = -N\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma >= N:\n        ans = N-1\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309608765": {
+      "id": 309608765,
+      "creationTimeSeconds": 1741514440,
+      "relativeTimeSeconds": 5740,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 5,
+      "timeConsumedMillis": 61,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma <= 1:\n        ans = 1\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309608471": {
+      "id": 309608471,
+      "creationTimeSeconds": 1741514290,
+      "relativeTimeSeconds": 5590,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 8,
+      "timeConsumedMillis": 77,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 1\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309608380": {
+      "id": 309608380,
+      "creationTimeSeconds": 1741514248,
+      "relativeTimeSeconds": 5548,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 5,
+      "timeConsumedMillis": 61,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 1:\n        ans = 1\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309608258": {
+      "id": 309608258,
+      "creationTimeSeconds": 1741514186,
+      "relativeTimeSeconds": 5486,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 2,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 1\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 1:\n        ans = 1\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309607891": {
+      "id": 309607891,
+      "creationTimeSeconds": 1741513995,
+      "relativeTimeSeconds": 5295,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 8,
+      "timeConsumedMillis": 77,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309607425": {
+      "id": 309607425,
+      "creationTimeSeconds": 1741513745,
+      "relativeTimeSeconds": 5045,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 8,
+      "timeConsumedMillis": 61,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = -N\n    maks_lok = -N\n    minimum = N\n    minimum_lok = N\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    minimum = lista[0]\n    minimum_lok = lista[0]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = N\n            maks = -N\n            maks_lok = -N\n            minimum_lok = N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309607236": {
+      "id": 309607236,
+      "creationTimeSeconds": 1741513660,
+      "relativeTimeSeconds": 4960,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 0,
+      "timeConsumedMillis": 46,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = 0\n    maks_lok = 0\n    minimum = 0\n    minimum_lok = 0\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    minimum = lista[0]\n    minimum_lok = lista[0]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = -N\n            maks = 0\n            maks_lok = 0\n            minimum_lok = -N\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309606458": {
+      "id": 309606458,
+      "creationTimeSeconds": 1741513230,
+      "relativeTimeSeconds": 4530,
+      "programmingLanguage": "Python 3",
+      "verdict": "WRONG_ANSWER",
+      "testset": "TESTS",
+      "passedTestCount": 8,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = 0\n    maks_lok = 0\n    minimum = 0\n    minimum_lok = 0\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    minimum = lista[0]\n    minimum_lok = lista[0]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = lista[i]\n            maks = 0\n            maks_lok = 0\n            minimum_lok = lista[i]\n    if xd == -1:\n        print(\"uncertain\")\n        return 0\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309606168": {
+      "id": 309606168,
+      "creationTimeSeconds": 1741513056,
+      "relativeTimeSeconds": 4356,
+      "programmingLanguage": "Python 3",
+      "verdict": "RUNTIME_ERROR",
+      "testset": "TESTS",
+      "passedTestCount": 1,
+      "timeConsumedMillis": 61,
+      "memoryConsumedBytes": 1024000,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = 0\n    maks_lok = 0\n    minimum = 0\n    minimum_lok = 0\n    suma = 0\n    xd = -1\n    W = input()\n    lista = [int(x) for x in W.split()]\n    minimum = lista[0]\n    minimum_lok = lista[0]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = lista[i]\n            maks = 0\n            maks_lok = 0\n            minimum_lok = lista[i]\n    if xd == -1:\n        print(\"uncertain\")\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "309605676": {
+      "id": 309605676,
+      "creationTimeSeconds": 1741512780,
+      "relativeTimeSeconds": 4080,
+      "programmingLanguage": "Python 3",
+      "verdict": "RUNTIME_ERROR",
+      "testset": "TESTS",
+      "passedTestCount": 0,
+      "timeConsumedMillis": 46,
+      "memoryConsumedBytes": 0,
+      "code": "def main():\n    N = int(input())\n    k = int(input())\n    maks = 0\n    maks_lok = 0\n    minimum = 0\n    minimum_lok = 0\n    suma = 0\n    xd = -1\n    lista = []\n    for i in range(k):\n        lista.append(int(input()))\n    minimum = lista[0]\n    minimum_lok = lista[0]\n    for i in range(k):\n        suma += lista[i]\n        maks_lok = max(lista[i], maks_lok + lista[i])\n        maks = max(maks, maks_lok)\n        minimum_lok = min(lista[i], minimum_lok + lista[i])\n        minimum = min(minimum, minimum_lok)\n        if maks >= N or minimum <= -N:\n            if maks >= N:\n                xd = N\n            else:\n                xd = 0\n            suma = 0\n            minimum = lista[i]\n            maks = 0\n            maks_lok = 0\n            minimum_lok = lista[i]\n    if xd == -1:\n        print(\"uncertain\")\n    elif xd + suma > N:\n        ans = N\n    elif xd + suma < 0:\n        ans = 0\n    else:\n        ans = xd + suma\n    print(ans)\nmain()"
+    },
+    "304170446": {
+      "id": 304170446,
+      "creationTimeSeconds": 1738523118,
+      "relativeTimeSeconds": 2418,
+      "programmingLanguage": "Python 3",
+      "verdict": "OK",
+      "testset": "TESTS",
+      "passedTestCount": 10,
+      "timeConsumedMillis": 62,
+      "memoryConsumedBytes": 0,
+      "code": "R = int(input());\n\nN = int(input());\n\nM = list(map(int, input().split()))\n\ndef sim(x):\n\tfor i in M:\n\t\tx = max(min(R, x+i), 0)\n\treturn x\n\nif sim(0) == sim(R):\n\tprint(sim(0))\nelse:\n\tprint(\"uncertain\")\n"
+    }
+  },
+  "testcases": [
+    {
+      "no": 1,
+      "input": "100\n2\n110 -20",
+      "expect": "80",
+      "hasStdIn": true
+    },
+    {
+      "no": 2,
+      "input": "100\n1\n50",
+      "expect": "uncertain",
+      "hasStdIn": true
+    },
+    {
+      "no": 3,
+      "input": "100\n8\n50 30 -40 10 -30 -50 30 -10",
+      "expect": "20",
+      "hasStdIn": true
+    },
+    {
+      "no": 4,
+      "input": "25\n4\n30 -40 20 -15",
+      "expect": "5",
+      "hasStdIn": true
+    },
+    {
+      "no": 5,
+      "input": "80\n4\n-30 -20 -40 10",
+      "expect": "10",
+      "hasStdIn": true
+    },
+    {
+      "no": 6,
+      "input": "50\n2\n-100 80",
+      "expect": "50",
+      "hasStdIn": true
+    },
+    {
+      "no": 7,
+      "input": "10\n2\n5 -3",
+      "expect": "uncertain",
+      "hasStdIn": true
+    },
+    {
+      "no": 8,
+      "input": "47\n7\n17 -14 -14 8 -10 -24 -12",
+      "expect": "0",
+      "hasStdIn": true
+    }
+  ]
+}

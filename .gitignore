@@ -143,10 +143,4 @@ dmypy.json
 query/
 *.sql
 
-# Dataset
-# data.zip
-data/
-data2/
-data2.zip
-data_og/
-data_v1.zip
+test.ipynb
