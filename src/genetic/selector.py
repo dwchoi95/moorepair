@@ -11,7 +11,7 @@ from .fitness import Fitness
 from ..utils import Randoms
 
 
-SELECTIONS = ["none", "random", "nsga3", "moead", "rnsga3", "hype", "pydex"]
+SELECTIONS = ["none", "random", "nsga3", "rnsga3", "hype", "pydex"]
 
 class MOO(Problem):
     def __init__(self, scores: dict):
@@ -50,9 +50,6 @@ class Selector:
     
     def rnsga3(self, scores:dict, pop_size:int, factory:str="custom") -> list:
         return self.__moo_run(scores, pop_size, factory=factory, algo="rnsga3")
-    
-    def moead(self, scores:dict, pop_size:int, factory:str="das-dennis") -> list:
-        return self.__moo_run(scores, pop_size, factory=factory, algo="moead")
     
     def __moo_run(self, scores:dict, pop_size:int, factory:str="das-dennis", algo:str="rnsga3") -> list:
         # Set Problem
@@ -114,13 +111,7 @@ class Selector:
                 kmeans.fit(objectives_array)
                 ref_points = kmeans.cluster_centers_
     
-        if algo == "moead":
-            algo = MOEAD(ref_dirs, 
-                         n_offsprings=pop_size,
-                        #  prob_neighbor_mating=0.9,
-                        #  n_neighbors=max(5, N//5)
-                         )
-        elif algo == "nsga3":
+        if algo == "nsga3":
             algo = NSGA3(ref_dirs, 
                          n_offsprings=pop_size,
                         #  eliminate_duplicates=True
@@ -129,7 +120,7 @@ class Selector:
             algo = RNSGA3(ref_points,
                           pop_per_ref_point=pop_size)
         else:
-            raise ValueError(f"Invalid algorithm: {algo}. Choose 'moead' or 'nsga3'.")
+            raise ValueError(f"Invalid algorithm: {algo}. Choose 'nsga3' or 'rnsga3'.")
         
         res = minimize(problem, algo, verbose=False)
         X_pop = res.pop.get("X")
@@ -171,8 +162,6 @@ class Selector:
             selected = self.nsga3(scores, pop_size)
         elif selection == "rnsga3":
             selected = self.rnsga3(scores, pop_size)
-        elif selection == "moead":
-            selected = self.moead(scores, pop_size)
         elif selection == "hype":
             selected = self.hype(scores, pop_size)
         elif selection == "pydex":

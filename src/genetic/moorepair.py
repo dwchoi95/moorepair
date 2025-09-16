@@ -137,16 +137,6 @@ class MooRepair:
             if early_stop: break
                 
         return result
-    
-    
-    def multi_run(self, b_id:str, b_code:str, generations:int, pop_size:int,
-                  selection:str, threshold:float, manager:dict):
-        if selection == "pydex":
-            result = self._pydex_run(b_code, generations, threshold)
-        else:
-            result = self._ga_run(b_code, generations, 
-                                pop_size, selection, threshold)
-        manager[b_id] = result
         
         
     def run(self, generations:int, pop_size:int, 

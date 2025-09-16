@@ -51,13 +51,10 @@ class LLM:
             time.sleep(5)
             return self.run(system, user, format)
         except Exception as e:
-            # pass
+            pass
             # print(e)
             # print(system)
             # print(user)
-            import time
-            time.sleep(5)
-            return self.run(system, user, format)
         return None
     
     def test(self, system:str, user:str, format:BaseModel):
@@ -83,13 +80,10 @@ class LLM:
             time.sleep(5)
             return self.test(system, user, format)
         except Exception as e:
-            # pass
+            pass
             # print(e)
             # print(system)
             # print(user)
-            import time
-            time.sleep(5)
-            return self.run(system, user, format)
         return None
 
     async def pydex(self, user:str, format:BaseModel):
@@ -113,10 +107,8 @@ class LLM:
             time.sleep(5)
             return self.pydex(user, format)
         except Exception as e:
-            # pass
+            pass
             # print(e)
+            # print(system)
             # print(user)
-            import time
-            time.sleep(5)
-            return self.run(system, user, format)
         return None
