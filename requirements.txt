@@ -1,0 +1,17 @@
+apted==1.0.3
+ast-comments==1.2.3
+datasketch==1.6.5
+Levenshtein==0.27.1
+numpy==2.3.1
+openai==1.93.0
+ordered-set==4.1.0
+pandas==2.3.0
+psutil==7.0.0
+pylint==3.3.7
+pymoo==0.6.1.5
+radon==6.0.1
+scikit-learn==1.7.0
+texttable==1.7.0
+tinydb==4.8.2
+tqdm==4.67.1
+dataset==1.6.2
