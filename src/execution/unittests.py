@@ -1,5 +1,5 @@
 import sys
-from io import StringIO
+from io import StringIO, BytesIO
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -34,6 +34,10 @@ class Validating(unittest.TestCase):
         self.original_globals = dict(globals()).copy()
         globals()['__name__'] = '__main__'
         self.input_data = StringIO(Result.input)
+        self.input_data_bytes = BytesIO(Result.input.encode())
+        self.input_data.buffer = self.input_data_bytes
+        self.open_data = mock_open(read_data=Result.input)
+        self.open_data.return_value.buffer = BytesIO(Result.input.encode())
         self.mock_stdout = StringIO()
         self.mock_stderr = StringIO()
         self.stdout = None
@@ -42,6 +46,7 @@ class Validating(unittest.TestCase):
         globals().clear()
         globals().update(self.original_globals)
         self.input_data.close()
+        self.input_data_bytes.close()
         self.mock_stdout.close()
         self.mock_stderr.close()
 
@@ -73,7 +78,7 @@ class Validating(unittest.TestCase):
     def test(self):
         with (
             patch('sys.stdin', self.input_data),
-            patch('builtins.open', mock_open(read_data=Result.input)),
+            patch('builtins.open', self.open_data),
             patch('builtins.input', side_effect=lambda *a, **k: sys.stdin.readline().rstrip('\\n')),
             patch('sys.stdout', self.mock_stdout),
             patch('sys.stderr', self.mock_stderr)):
@@ -94,7 +99,7 @@ class Tracing(Validating):
     def test(self):
         with (
             patch('sys.stdin', self.input_data),
-            patch('builtins.open', mock_open(read_data=Result.input)),
+            patch('builtins.open', self.open_data),
             patch('builtins.input', side_effect=lambda *a, **k: sys.stdin.readline().rstrip('\\n')),
             patch('sys.stdout', self.mock_stdout),
             patch('sys.stderr', self.mock_stderr)):

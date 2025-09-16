@@ -72,6 +72,8 @@ class Experiments:
         os.makedirs(optimals_dir, exist_ok=True)
         exp_dir = os.path.join(self.dataset_dir, str(problemId), "experiments")
         os.makedirs(exp_dir, exist_ok=True)
+        log_dir = os.path.join(self.dataset_dir, str(problemId), "logs")
+        os.makedirs(log_dir, exist_ok=True)
 
         return problemId, title, description, timeLimit, memLimit, buggys, testcases
         
@@ -280,7 +282,11 @@ class Experiments:
                                           trials=trial,
                                           buggy_programs=len(buggys))
         if result: return None
-        
+        log_path = os.path.join(
+            self.dataset_dir, 
+            str(problemId), 
+            "logs", 
+            f"{self.selection}_{self.pop_size}_{self.generations}_{trial}.log")
         # Run MooRepair
         moorepair = MooRepair(buggys=buggys.copy(), 
                               testcases=testcases,
@@ -288,7 +294,8 @@ class Experiments:
                               memLimit=memLimit,
                               title=title,
                               description=description,
-                              objectives=self.objectives)
+                              objectives=self.objectives,
+                              log_path=log_path)
         solutions = moorepair.run(self.generations, self.pop_size, 
                                  self.selection, self.threshold)
         self.__save_results(trial, problemId, buggys, solutions, 
@@ -302,44 +309,32 @@ class Experiments:
             problems = list(self.problem_tb.find(order_by='id'))
         # Randoms.shuffle(problems)
         
-        # if self.multi:
-        #     procs = []
-        #     exp_datas = []
-        #     for problem in problems:
-        #         problemId, title, description, timeLimit, \
-        #         memLimit, buggys, testcases = self.__setup(problem)
-        #         if self.reset: self.delete_logs(problemId)
-        #         for trial in range(1, self.trials+1):
-        #             proc = Process(target=self.__core, 
-        #                         args=(trial, problemId, buggys, testcases,
-        #                                 timeLimit, memLimit, title, description))
-        #             proc.start()
-        #             procs.append(proc)
-        #         exp_datas.append((problemId, title, buggys))
-        #     for proc in procs: proc.join()
+        if self.multi:
+            procs = []
+            exp_datas = []
+            for problem in problems:
+                problemId, title, description, timeLimit, \
+                memLimit, buggys, testcases = self.__setup(problem)
+                if self.reset: self.delete_logs(problemId)
+                for trial in range(1, self.trials+1):
+                    proc = Process(target=self.__core, 
+                                args=(trial, problemId, buggys, testcases,
+                                        timeLimit, memLimit, title, description))
+                    proc.start()
+                    procs.append(proc)
+                exp_datas.append((problemId, title, buggys))
+            for proc in procs: proc.join()
 
-        #     for problemId, title, buggys in exp_datas:
-        #         experiments_id = self.__save_experiments(problemId, title, buggys)
-        #         self.__print_table(self.experiments_tb, experiments_id)
-        # else:
-        #     for problem in problems:
-        #         problemId, title, description, timeLimit, \
-        #         memLimit, buggys, testcases = self.__setup(problem)
-        #         if self.reset: self.delete_logs(problemId)
-        #         for trial in range(1, self.trials+1):
-        #             self.__core(trial, problemId, buggys, testcases,
-        #                         timeLimit, memLimit, title, description)
-        #         experiments_id = self.__save_experiments(problemId, title, buggys)
-        #         self.__print_table(self.experiments_tb, experiments_id)
-        
-        for problem in problems:
-            problemId, title, description, timeLimit, \
-            memLimit, buggys, testcases = self.__setup(problem)
-            # if self.reset: self.delete_logs(problemId)
-            # for trial in range(1, self.trials+1):
-            for trial in range(1, 3):
-                self.__core(trial, problemId, buggys, testcases,
-                            timeLimit, memLimit, title, description)
-            experiments_id = self.__save_experiments(problemId, title, buggys)
-            self.__print_table(self.experiments_tb, experiments_id)
-    
+            for problemId, title, buggys in exp_datas:
+                experiments_id = self.__save_experiments(problemId, title, buggys)
+                self.__print_table(self.experiments_tb, experiments_id)
+        else:
+            for problem in problems:
+                problemId, title, description, timeLimit, \
+                memLimit, buggys, testcases = self.__setup(problem)
+                if self.reset: self.delete_logs(problemId)
+                for trial in range(1, self.trials+1):
+                    self.__core(trial, problemId, buggys, testcases,
+                                timeLimit, memLimit, title, description)
+                experiments_id = self.__save_experiments(problemId, title, buggys)
+                self.__print_table(self.experiments_tb, experiments_id)

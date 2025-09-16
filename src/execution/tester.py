@@ -122,8 +122,6 @@ class Tester:
     
     @classmethod
     def run_core(cls, code:str, testcase:Testcase, UnitTest:object=Validating, q:Queue=None) -> Result:
-        # Preprocess
-        code = code.replace('sys.stdin.buffer', 'sys.stdin')
         if UnitTest == Tracing:
             code = Regularize.run(code)
             

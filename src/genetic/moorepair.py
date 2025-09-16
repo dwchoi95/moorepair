@@ -1,11 +1,12 @@
 from tqdm import tqdm
-from multiprocessing import Process, Manager
 
 from .selector import Selector
 from .fixer import Fixer
 from .pydex import PyDex
 from .fitness import Fitness
 from ..execution import Tester
+from ..utils import TinyDatabase, Log
+
 
 class MooRepair:
     def __init__(self,
@@ -15,7 +16,8 @@ class MooRepair:
                  memLimit:int=256,
                  title:str="",
                  description:str="",
-                 objectives:list=Fitness.OBJECTIVES):
+                 objectives:list=Fitness.OBJECTIVES,
+                 log_path:str=None):
         Tester.init_globals(testcases, timeLimit, memLimit, title, description)
         
         self.buggys = buggys
@@ -24,6 +26,7 @@ class MooRepair:
         self.selector = Selector(self.fitness)
         self.fixer = Fixer(self.fitness)
         self.pydex = PyDex()
+        self.db = TinyDatabase(log_path)
     
     def _init_population(self, b_code:str, pop_size:int) -> dict:
         population = {}
@@ -52,19 +55,22 @@ class MooRepair:
         return False
     
     def _ga_run(self, buggy:str, generations:int, 
-                pop_size:int, selection:str, threshold:float) -> dict:
+                pop_size:int, selection:str, threshold:float, log:Log) -> dict:
         early_stop = False
         # Initialization
         population = self._init_population(buggy, pop_size)
         result = {gen:list() for gen in range(1, generations+1)}
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
+            log.insert({'generation': gen, 'buggy':buggy, 'population': population})
             solutions = result[gen]
             
             # Evaluation & Selection
             parents = self.selector.run(buggy, population, pop_size, selection)
+            log.update({'parents': parents})
             
             # Variation (Crossover & Mutation)
             childs = self.fixer.run(buggy, parents)
+            log.update({'childs': childs})
             for child in childs:
                 # Duplicate Check
                 if child in population.values(): continue
@@ -81,6 +87,7 @@ class MooRepair:
                 
                 # Patch Validation
                 passed = self._validation(patch)
+                log.update({p_id: {'patch': patch, 'passed': passed}})
                 if not passed: continue
                 solutions.append(patch)
                 
@@ -96,15 +103,17 @@ class MooRepair:
                 
         return result
     
-    def _pydex_run(self, buggy:str, generations:int, threshold:float) -> dict:
+    def _pydex_run(self, buggy:str, generations:int, threshold:float, log:Log) -> dict:
         early_stop = False
         result = {gen:list() for gen in range(1, generations+1)}
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
+            log.insert({'generation': gen, 'buggy':buggy})
             solutions = result[gen]
             patches = self.pydex.run(buggy)
+            log.update({'patches': patches})
                 
             # Replacement
-            for patch in tqdm(patches, 
+            for p_id, patch in tqdm(enumerate(patches, start=1), 
                               desc="Validation",
                               position=2,
                               leave=False):
@@ -114,6 +123,7 @@ class MooRepair:
                 
                 # Patch Validation
                 passed = self._validation(patch)
+                log.update({p_id: {'patch': patch, 'passed': passed}})
                 if not passed: continue
                 solutions.append(patch)
                 
@@ -141,17 +151,14 @@ class MooRepair:
         
     def run(self, generations:int, pop_size:int, 
             selection:str, threshold:float) -> dict:
-        
-        procs = []
-        manager = Manager().dict()
         results = {gen:dict() for gen in range(1, generations+1)}
         for b_id, b_code in self.buggys.items():
-            p = Process(target=self.multi_run, 
-                        args=(b_id, b_code, generations, pop_size, selection, threshold, manager))
-            p.start()
-            procs.append(p)
-        for p in tqdm(procs, desc="Buggy", position=0): p.join()
-        for b_id, result in manager.items():
+            log = Log(self.db.table(str(b_id)))
+            if selection == "pydex":
+                result = self._pydex_run(b_code, generations, threshold, log)
+            else:
+                result = self._ga_run(b_code, generations, 
+                                    pop_size, selection, threshold, log)
             for gen, solutions in result.items():
                 results[gen][b_id] = solutions
         return results
