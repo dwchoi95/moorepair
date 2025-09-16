@@ -4,7 +4,6 @@ from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga3 import NSGA3
 from pymoo.algorithms.moo.rnsga3 import RNSGA3
-from pymoo.algorithms.moo.moead import MOEAD
 from sklearn.cluster import KMeans
 
 from .fitness import Fitness

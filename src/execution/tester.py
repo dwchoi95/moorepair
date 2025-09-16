@@ -169,6 +169,7 @@ class Tester:
             results[no] = result
         for proc in procs:
             proc.join()
+        q.close()
           
         return results
     

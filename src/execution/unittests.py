@@ -37,7 +37,7 @@ class Validating(unittest.TestCase):
         self.input_data_bytes = BytesIO(Result.input.encode())
         self.input_data.buffer = self.input_data_bytes
         self.open_data = mock_open(read_data=Result.input)
-        self.open_data.return_value.buffer = BytesIO(Result.input.encode())
+        self.open_data.return_value.buffer = self.input_data_bytes
         self.mock_stdout = StringIO()
         self.mock_stderr = StringIO()
         self.stdout = None
@@ -47,6 +47,7 @@ class Validating(unittest.TestCase):
         globals().update(self.original_globals)
         self.input_data.close()
         self.input_data_bytes.close()
+        self.open_data.return_value.close()
         self.mock_stdout.close()
         self.mock_stderr.close()
 

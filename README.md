@@ -42,9 +42,9 @@ data.zip : The dataset from Codeforces.
 ```bash
 python run.py -d data/dataset.db -r -e 3
 ```
-2. Quick Test on one problem with $pop\_size=2$, $N=2$ and multiprocessing 
+2. Quick Test on one problem with $pop\_size=2$, $N=1$ 
 ```bash
-python run.py -d data/dataset.db -r --problem 4 -p 2 -g 2 -m
+python run.py -d data/dataset.db -r --problem 4 -p 2 -g 1
 ```
 
 ## Run options
@@ -55,5 +55,4 @@ python run.py -d data/dataset.db -r --problem 4 -p 2 -g 2 -m
 -g : Number of generations, default is 9  
 -e : Number of executions, default is 1  
 -r : Reset experimental results, default is false  
--m : Run multiple executions with multiprocessing, default is false  
 -o : Select objective functions to considered, e.g., 'f1 f2 f3 f4 f5 f6', default is 'f1 f2 f3 f4 f5 f6'  

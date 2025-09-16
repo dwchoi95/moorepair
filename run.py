@@ -26,8 +26,6 @@ if __name__ == "__main__":
                         help="Number of executions, default is 1")
     parser.add_argument('-r', '--reset', action='store_true', default=False,
                         help="Reset experimental results")
-    parser.add_argument('-m', '--multiprocess', action='store_true', default=False,
-                        help="Run with multiprocessing")
     parser.add_argument('-o', '--objectives', nargs='+', default=" ".join(Fitness.OBJECTIVES),
                         help=f"Select objectives to considered, e.g., '{" ".join(Fitness.OBJECTIVES)}'")
     
@@ -43,7 +41,6 @@ if __name__ == "__main__":
     threshold = args.threshold
     executions = args.executions
     reset = args.reset
-    multi = args.multiprocess
     objectives = args.objectives
     if isinstance(objectives, str):
         objectives = objectives.split(' ')
@@ -64,8 +61,6 @@ if __name__ == "__main__":
         "Executions must be a positive integer"
     assert isinstance(reset, bool), \
         "Reset must be a boolean value"
-    assert isinstance(multi, bool), \
-        "Multiprocess must be a boolean value"
     assert isinstance(objectives, list) and \
         all(isinstance(obj, str) for obj in objectives), \
         "Objectives must be a list of strings"
@@ -76,6 +71,6 @@ if __name__ == "__main__":
         generations, pop_size, 
         selection, threshold, 
         objectives, executions, 
-        reset, multi)
+        reset)
     ex.run(problems)
     # ex.update_exp(problems)
