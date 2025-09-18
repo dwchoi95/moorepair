@@ -110,7 +110,7 @@ class _Timeout(object):
         self.__exception_message = exception_message
         self.__name__ = function.__name__
         self.__doc__ = function.__doc__
-        self.__timeout = time.time()
+        self.__timeout = time.process_time()
         # self.__process = multiprocessing.Process()
         # self.__queue = multiprocessing.Queue()
         
@@ -168,7 +168,7 @@ class _Timeout(object):
             if trace:
                 tracemalloc.start()
                 self.before_mem = tracemalloc.get_traced_memory()[1]
-                start_time = time.time()
+                start_time = time.process_time()
                 sys.settrace(self.localtrace)
             result = function(*args, **kwargs)
             flag = True
@@ -176,7 +176,7 @@ class _Timeout(object):
             result = e
         finally:
             if trace:
-                exec_time = time.time() - start_time
+                exec_time = time.process_time() - start_time
                 mem_usage = tracemalloc.get_traced_memory()[1] - self.before_mem
                 tracemalloc.stop()
                 sys.settrace(None)
@@ -200,7 +200,7 @@ class _Timeout(object):
         self.__process.start()
 
         if self.__limit is not None:
-            self.__timeout = time.time() + self.__limit
+            self.__timeout = time.process_time() + self.__limit
 
         while not self.ready:
             time.sleep(0.00000001)
@@ -229,7 +229,7 @@ class _Timeout(object):
     @property
     def ready(self):
         """Read-only property indicating status of "value" property."""
-        if self.__limit and self.__timeout < time.time():
+        if self.__limit and self.__timeout < time.process_time():
             self.cancel()
         return self.__queue.full() and not self.__queue.empty()
 

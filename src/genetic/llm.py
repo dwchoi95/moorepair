@@ -1,4 +1,5 @@
 import re
+import time
 from openai import (
     OpenAI,
     AsyncOpenAI, 
@@ -7,7 +8,6 @@ from openai import (
     APIConnectionError, 
     AuthenticationError
 )
-
 from pydantic import BaseModel
 
 
@@ -47,45 +47,16 @@ class LLM:
             exit()
         except (APIError, APIConnectionError) as e:
             # print(f"OPENAI Error: {str(e)}.\nRetry after a while.")
-            import time
-            time.sleep(5)
+            time.sleep(3)
             return self.run(system, user, format)
         except Exception as e:
-            pass
-            # print(e)
+            print(e)
             # print(system)
             # print(user)
+            time.sleep(3)
+            return self.run(system, user, format)
         return None
     
-    def test(self, system:str, user:str, format:BaseModel):
-        client = OpenAI()
-        try:
-            response = client.responses.parse(
-                model=self.model, 
-                input=[
-                    { "role": "system", "content": system },
-                    { "role": "user", "content": user }
-                ],
-                temperature=self.temperature,
-                text_format=format,
-            )
-            model = response.output_parsed
-            return model
-        except (RateLimitError, AuthenticationError) as e:
-            print(f"OPENAI Error: {str(e)}.\nConfirm your API key and model name.")
-            exit()
-        except (APIError, APIConnectionError) as e:
-            print(f"OPENAI Error: {str(e)}.\nRetry after a while.")
-            import time
-            time.sleep(5)
-            return self.test(system, user, format)
-        except Exception as e:
-            pass
-            # print(e)
-            # print(system)
-            # print(user)
-        return None
-
     async def pydex(self, user:str, format:BaseModel):
         try:
             response = await self.client.responses.parse(
@@ -103,12 +74,11 @@ class LLM:
             exit()
         except (APIError, APIConnectionError) as e:
             # print(f"OPENAI Error: {str(e)}.\nRetry after a while.")
-            import time
-            time.sleep(5)
+            time.sleep(3)
             return self.pydex(user, format)
         except Exception as e:
-            pass
-            # print(e)
-            # print(system)
+            print(e)
             # print(user)
+            time.sleep(3)
+            return self.pydex(user, format)
         return None

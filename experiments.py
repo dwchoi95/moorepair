@@ -4,7 +4,9 @@ import math
 import dataset
 from tqdm import tqdm
 from texttable import Texttable
+from multiprocessing import Process
 
+from src.execution import Tester
 from src.genetic import MooRepair, Fitness, Selector
 from src.utils import DBKey, ETC, TED, Database, Sampling
 
@@ -118,21 +120,16 @@ class Experiments:
                        selector:Selector) -> dict:
         # Save Summary
         optimal_solutions = {}
+        cumulative_solutions = {b_id: [] for b_id in buggys.keys()}
         for generation, result in tqdm(results.items(), desc="Save", leave=False):
             fixed = 0
             overall_rps = 0
             overall_hv = 0
             overall_objectives = {obj:0 for obj in Fitness.OBJECTIVES}
+            for b_id, sols in result.items():
+                cumulative_solutions[b_id].extend(sols)
             for b_id, buggy in buggys.items():
-                solutions = []
-                if b_id not in result.keys():
-                    for gen in range(generation-1, 0, -1):
-                        result = results[gen]
-                        if b_id in result.keys():
-                            solutions = results[generation-1][b_id]
-                            break
-                else:
-                    solutions = result[b_id]
+                solutions = cumulative_solutions[b_id]
                 if not solutions: continue
                 scoring = {}
                 hypes = {}
@@ -280,13 +277,15 @@ class Experiments:
                                           buggy_programs=len(buggys))
         if result: return None
         # Run MooRepair
+        log_file = os.path.join(
+            self.dataset_dir, 
+            str(problemId), 
+            "logs", 
+            f"{self.selection}_{self.pop_size}_{self.generations}_{trial}.log")
+        Tester.init_globals(testcases, timeLimit, memLimit, title, description)
         moorepair = MooRepair(buggys=buggys.copy(), 
-                              testcases=testcases,
-                              timeLimit=timeLimit,
-                              memLimit=memLimit,
-                              title=title,
-                              description=description,
-                              objectives=self.objectives)
+                              objectives=self.objectives,
+                              log_file=log_file)
         solutions = moorepair.run(self.generations, self.pop_size, 
                                  self.selection, self.threshold)
         self.__save_results(trial, problemId, buggys, solutions, 
@@ -299,13 +298,23 @@ class Experiments:
         else:
             problems = list(self.problem_tb.find(order_by='id'))
         # Randoms.shuffle(problems)
-
+        
+        procs = []
+        exp_datas = []
         for problem in problems:
             problemId, title, description, timeLimit, \
             memLimit, buggys, testcases = self.__setup(problem)
             if self.reset: self.delete_logs(problemId)
             for trial in range(1, self.trials+1):
-                self.__core(trial, problemId, buggys, testcases,
-                            timeLimit, memLimit, title, description)
+                proc = Process(target=self.__core, args=(
+                    trial, problemId, buggys, testcases,
+                    timeLimit, memLimit, title, description))
+                proc.start()
+                procs.append(proc)
+            exp_datas.append((problemId, title, buggys))
+        for proc in procs: proc.join()
+        
+        for problemId, title, buggys in exp_datas:
             experiments_id = self.__save_experiments(problemId, title, buggys)
             self.__print_table(self.experiments_tb, experiments_id)
+           
