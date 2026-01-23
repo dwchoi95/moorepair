@@ -4,7 +4,7 @@ from pydantic import BaseModel
     
 class Ollama:
     def __init__(self, 
-                 model:str="llama3.1:8b", 
+                 model:str="codellama:7b", 
                  temperature:float=0.0):
         from dotenv import load_dotenv
         import os
@@ -26,13 +26,14 @@ class Ollama:
                 ],
                 options={
                     "temperature": self.temperature,
+                    "num_ctx": 16000,
                 },
                 format=format.model_json_schema()
             )
             res = format.model_validate_json(response.message.content)
             return res
         except Exception as e:
-            print(e)
+            # print(e)
             pass
         return None
         

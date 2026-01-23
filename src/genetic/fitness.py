@@ -70,11 +70,11 @@ class Fitness:
     def similarity(self, buggy:Program, references:Programs) -> dict:
         results = {}
         for refer in tqdm(references, desc="F2", leave=False):
-            results[refer.id] = self.__codebleu(
+            results[refer.id] = self.codebleu(
                 buggy.code, refer.code, buggy.ext)
         return results
     
-    def __codebleu(self, code1:str, code2:str, language:str="c") -> float:
+    def codebleu(self, code1:str, code2:str, language:str="c") -> float:
         language = language.lower()
         if language == "c++":
             language = "cpp"

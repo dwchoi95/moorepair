@@ -53,8 +53,8 @@ class Crossover:
         )
         return system, user, OutFormat
     
-    def _task(self, programs:Programs):
-        a_async = self.model.run(*self.make_prompt(programs))
+    async def _task(self, programs:Programs):
+        a_async = await self.model.run(*self.make_prompt(programs))
         return a_async
     
     async def __run_async(self, programs:Programs) -> Programs:
@@ -74,5 +74,17 @@ class Crossover:
         pbar.close()
         return Programs(offsprings)
     
-    def run(self, programs:Programs) -> Programs:
-        return asyncio.run(self.__run_async(programs))
+    # def run(self, programs:Programs) -> Programs:
+    #     return asyncio.run(self.__run_async(programs))
+    
+    def run(self, programs:list) -> Programs:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(self.__run_async(programs))

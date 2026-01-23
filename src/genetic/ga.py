@@ -46,9 +46,14 @@ class GeneticAlgorithm:
         
     def _validation(self, patch:Program) -> bool:
         # Check the patch is solution
-        Tester.run(patch)
-        if Tester.is_all_pass(patch):
-            return True
+        try:
+            Tester.run(patch)
+            if Tester.is_all_pass(patch):
+                return True
+        except Exception as e:
+            print(e)
+            print(patch.code)
+            print(patch.ext)
         return False
     
     def _ga_run(self, buggy:Program, generations:int, 

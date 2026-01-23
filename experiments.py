@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import math
@@ -92,8 +93,8 @@ class Experiments:
                 generation_stats[gen]['accuracy'] += 1
                 
                 ## similarity
-                refer_sim = TED.compute_sim(buggy, refer)
-                patch_sim = TED.compute_sim(buggy, patch)
+                refer_sim = fitness.codebleu(buggy.code, refer.code, buggy.ext)
+                patch_sim = fitness.codebleu(buggy.code, patch.code, buggy.ext)
                 generation_stats[gen]['similarity'] += self.ratio(
                     (refer_sim - patch_sim), (refer_sim + patch_sim))
                 
@@ -163,6 +164,7 @@ class Experiments:
             df = pd.concat([df, new_row], ignore_index=True)
         
         results_path = f'results/{problemId}/{self.selection}/solutions_{trial}.csv'
+        os.makedirs(os.path.dirname(results_path), exist_ok=True)
         df.to_csv(results_path, index=False)
         
         # generation_stats에 total_bugs 정보 추가
@@ -270,6 +272,7 @@ class Experiments:
         # CSV로 저장
         summary_df = pd.DataFrame(csv_data)
         summary_path = f'results/{problemId}/{self.selection}/summary_all_trials.csv'
+        os.makedirs(os.path.dirname(summary_path), exist_ok=True)
         summary_df.to_csv(summary_path, index=False)
         
         # Trial별 상세 결과도 저장
@@ -295,6 +298,7 @@ class Experiments:
         
         detailed_df = pd.DataFrame(detailed_data)
         detailed_path = f'results/{problemId}/{self.selection}/detailed_all_trials.csv'
+        os.makedirs(os.path.dirname(detailed_path), exist_ok=True)
         detailed_df.to_csv(detailed_path, index=False)
 
     def __core(self, trial:int, problemId:int, description:str,

@@ -11,12 +11,12 @@ class Program:
     results:Results = field(default=None, metadata={"desc":"Run Results after execution"})
     
     def __hash__(self):
-        return hash((self.id, self.code, self.ext))
+        return hash((self.code, self.ext))
     
     def __eq__(self, other):
         if not isinstance(other, Program):
             return False
-        return self.id == other.id and self.code == other.code and self.ext == other.ext
+        return self.code == other.code and self.ext == other.ext
     
 class Programs:
     def __init__(self, programs:list[Program]=[]):

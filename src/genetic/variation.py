@@ -56,7 +56,7 @@ class Variation:
         # Crossover
         offsprings = self.crossover.run(programs)
         if len(offsprings) < len(programs):
-            supplement = Randoms.sample(programs, k=len(programs)-len(offsprings))
+            supplement = Randoms.sample(list(programs), k=len(programs)-len(offsprings))
             offsprings.extend(supplement)
         
         # Mutation

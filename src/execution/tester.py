@@ -22,7 +22,7 @@ class Tester:
     
     @classmethod
     def clear_cache(cls):
-        cls.run.cache_clear()
+        cls.__run.cache_clear()
     
     @classmethod
     def tests_split(cls, program:Program) -> tuple:
@@ -143,7 +143,7 @@ class Tester:
                 f.write(program.code)
 
             res = cls._run(["g++", "-std=c++17", "-O2", "-pipe", src, "-o", exe], cwd=td)
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
 
     @classmethod
     def run_c(cls, program:Program):
@@ -154,7 +154,7 @@ class Tester:
                 f.write(program.code)
 
             res = cls._run(["gcc", "-O2", "-pipe", src, "-o", exe], cwd=td)
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
             
     @classmethod
     def run_java(cls, program:Program):
@@ -165,7 +165,7 @@ class Tester:
                 f.write(program.code)
 
             res = cls._run(["javac", f"{program.mn}.java"], cwd=td)
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
     
     @classmethod
     def run_python(cls, program:Program):
@@ -183,10 +183,9 @@ class Tester:
                     stdout="",
                     stderr=str(e),
                     exit_code=-1,
-                    timed_out=False,
                 )
             exe = ["python3", "main.py"]
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
     
     @classmethod
     def run_javascript(cls, program:Program):
@@ -197,7 +196,7 @@ class Tester:
 
             res = Result(status="", stdout="", stderr="", exit_code=0, timed_out=False)
             exe = ["node", "main.js"]
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
 
     @classmethod
     def run_r(cls, program:Program):
@@ -208,7 +207,7 @@ class Tester:
 
             res = Result(status="", stdout="", stderr="", exit_code=0, timed_out=False)
             exe = ["Rscript", "main.R"]
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
 
     @classmethod
     def run_csharp(cls, program:Program):
@@ -220,7 +219,7 @@ class Tester:
             exe_path = os.path.join(td, "Main.exe")
             res = cls._run(["mcs", "-optimize+", "-out:Main.exe", f"{program.mn}.cs"], cwd=td)
             exe = ["mono", exe_path]
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
         
     @classmethod
     def run_go(cls, program:Program):
@@ -232,7 +231,7 @@ class Tester:
 
             res = cls._run(["go", "build", "-o", exe_path, "main.go"], cwd=td)
             exe = [exe_path]
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
         
     @classmethod
     def run_rust(cls, program:Program):
@@ -244,29 +243,35 @@ class Tester:
 
             res = cls._run(["rustc", "-O", "main.rs", "-o", exe_path], cwd=td)
             exe = [exe_path]
-            program.results = cls._validation(res, [exe], td)
+            return cls._validation(res, [exe], td)
     
     @classmethod
     @cache
-    def run(cls, program:Program):
+    def __run(cls, program:Program) -> Results:
         ext = program.ext.lower()
         if ext == "c":
-            cls.run_c(program)
+            results = cls.run_c(program)
         elif ext == "cpp":
-            cls.run_cpp(program)
+            results = cls.run_cpp(program)
         elif ext == "csharp":
-            cls.run_csharp(program)
+            results = cls.run_csharp(program)
         elif ext == "java":
-            cls.run_java(program)
+            results = cls.run_java(program)
         elif ext == "py":
-            cls.run_python(program)
+            results = cls.run_python(program)
         elif ext == "js":
-            cls.run_javascript(program)
+            results = cls.run_javascript(program)
         elif ext == "r":
-            cls.run_r(program)
+            results = cls.run_r(program)
         elif ext == "go":
-            cls.run_go(program)
+            results = cls.run_go(program)
         elif ext == "rs":
-            cls.run_rust(program)
+            results = cls.run_rust(program)
         else:
             raise ValueError(f"Unsupported language: {ext}")
+        return results
+    
+    @classmethod
+    def run(cls, program:Program) -> Results:
+        program.results = cls.__run(program)
+        return program.results

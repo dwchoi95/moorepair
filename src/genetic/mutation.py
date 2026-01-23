@@ -30,7 +30,7 @@ USER_PROMPT = """# Inputs
 
 
 ## Buggy Program
-```python
+```{ext}
 {buggy}
 ```
 
@@ -50,16 +50,17 @@ class Mutation:
         system = SYSTEM_PROMPT.format(guideline=guideline)
         
         # User Prompt
-        Tester.run(buggy.code, buggy.ext)
+        Tester.run(buggy)
         user = USER_PROMPT.format(
             description=self.description,
             buggy=buggy.code,
+            ext=buggy.ext,
             test_results=str(buggy.results)
         )
         return system, user, OutFormat
     
-    def _task(self, buggy:Program, guideline:str):
-        a_async = self.model.run(*self.make_prompt(buggy, guideline))
+    async def _task(self, buggy:Program, guideline:str):
+        a_async = await self.model.run(*self.make_prompt(buggy, guideline))
         return a_async, buggy.ext
     
     async def __run_async(self, programs:list) -> Programs:
@@ -67,16 +68,29 @@ class Mutation:
         
         fixed_programs = []
         pbar = tqdm_async(total=len(tasks), desc='Mutation', leave=False, position=2)
-        for coro, extension in asyncio.as_completed(tasks):
-            code:OutFormat = await coro
+        for coro in asyncio.as_completed(tasks):
+            code, ext = await coro
+            if code is None: continue
             fixed_programs.append(Program(
                 id=f"mutate_{len(fixed_programs)+1}",
                 code=code.fixed_program,
-                ext=extension
+                ext=ext
             ))
             pbar.update(1)
         pbar.close()
         return Programs(fixed_programs)
     
+    # def run(self, programs:list) -> Programs:
+    #     return asyncio.run(self.__run_async(programs))
+    
     def run(self, programs:list) -> Programs:
-        return asyncio.run(self.__run_async(programs))
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(self.__run_async(programs))
