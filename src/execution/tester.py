@@ -3,6 +3,7 @@ warnings.filterwarnings("ignore")
 
 import os
 import time
+import signal
 import psutil
 import threading
 import subprocess
@@ -41,53 +42,32 @@ class Tester:
     @classmethod
     def __run_process(cls, q, cmd, stdin, cwd):
         start = time.perf_counter()
+        
         p = subprocess.Popen(
             cmd, cwd=cwd, text=True,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        ps_p = psutil.Process(p.pid)
-        peak_rss = 0
+        
+        proc = psutil.Process(p.pid)
+        mem_usage = proc.memory_info().rss
+        for child in proc.children(recursive=True):
+            try:
+                mem_usage += child.memory_info().rss
+            except psutil.NoSuchProcess:
+                pass
 
-        stop = threading.Event()
-
-        def monitor():
-            nonlocal peak_rss
-            while not stop.is_set():
-                if p.poll() is not None:
-                    break
-                try:
-                    rss = ps_p.memory_info().rss
-                    # 자식 프로세스까지 합치고 싶으면 아래 2줄 포함
-                    for c in ps_p.children(recursive=True):
-                        rss += c.memory_info().rss
-                    if rss > peak_rss:
-                        peak_rss = rss
-                except psutil.NoSuchProcess:
-                    break
-                time.sleep(0.005)  # 5ms 폴링(너무 촘촘하면 오버헤드)
-
-        t = threading.Thread(target=monitor, daemon=True)
-        t.start()
-
-        status = ""
+        status, out, err = "", "", ""
+        rc = -1
         try:
             out, err = p.communicate(input=stdin, timeout=cls.timelimit)
             rc = p.returncode
         except subprocess.TimeoutExpired:
-            status = "timeout"
             p.kill()
+            status = "timeout"
             out, err = p.communicate()
-            rc = -1
-        finally:
-            stop.set()
-            t.join(timeout=0.1)
 
-        elapsed = time.perf_counter() - start
-
-        # 메모리 단위: bytes
-        peak_rss = peak_rss if peak_rss else 0
-
-        q.put((status, rc, out, err, elapsed, peak_rss))
+        exec_time = time.perf_counter() - start
+        q.put((status, rc, out, err, exec_time, mem_usage))
 
     @classmethod
     def _run(cls, cmd:list[str], *, cwd:str, stdin:str="") -> Result:
@@ -99,23 +79,25 @@ class Tester:
         proc.start()
     
         try:
-            status, rc, out, err, runtime, memory = q.get(timeout=cls.timelimit+0.5)
-            proc.join(timeout=0.1)
-                
-            return Result(
+            status, rc, out, err, exec_time, mem_usage = q.get()
+            proc.join()
+        except Exception as e:
+            status = "error"
+            rc = -1
+            out = ""
+            err = str(e)
+        finally:
+            if proc.is_alive():
+                proc.terminate()
+                proc.join()
+        
+        return Result(
                 status=status,
                 stdout=out,
                 stderr=err,
                 exit_code=rc,
-                runtime=runtime,
-                memory=memory,
-            )
-        except Exception as e:
-            return Result(
-                status="error",
-                stdout="",
-                stderr=str(e),
-                exit_code=-1,
+                runtime=exec_time,
+                memory=mem_usage
             )
     
     
