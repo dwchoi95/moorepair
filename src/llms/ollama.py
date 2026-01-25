@@ -5,16 +5,18 @@ from pydantic import BaseModel
 class Ollama:
     def __init__(self, 
                  model:str="codellama:7b", 
-                 temperature:float=0.0):
+                 temperature:float=0.0,
+                 token_limit:int=16000):
         from dotenv import load_dotenv
         import os
         load_dotenv()
         LOCAL_API_URL = os.getenv("LOCAL_API_URL")
         
-        self.host = LOCAL_API_URL
+        self.client = AsyncClient(host=LOCAL_API_URL)
         self.model = model
         self.temperature = temperature
-        self.client = AsyncClient(host=LOCAL_API_URL)
+        self.token_limit = token_limit
+        
 
     async def run(self, system:str, user:str, format:BaseModel) -> str| bool:
         try:
@@ -26,7 +28,7 @@ class Ollama:
                 ],
                 options={
                     "temperature": self.temperature,
-                    "num_ctx": 16000,
+                    "num_ctx": self.token_limit,
                 },
                 format=format.model_json_schema()
             )
