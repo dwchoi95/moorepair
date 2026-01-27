@@ -88,7 +88,7 @@ if __name__ == "__main__":
     else:
         problems.append(dataset)
     
-    ex = Experiments(dataset,
+    ex = Experiments(
         generations, pop_size, initialization,
         selection, threshold, 
         llm, temperature, timelimit,

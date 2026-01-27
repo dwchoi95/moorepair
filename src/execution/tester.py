@@ -33,18 +33,18 @@ class Tester:
         cls.__run.cache_clear()
     
     @classmethod
-    def tests_split(cls, program:Program) -> tuple:
-        passed, failed = [], []
-        for tr in program.results:
+    def tests_split(cls, results:Results) -> tuple[set, set]:
+        passed, failed = set(), set()
+        for tr in results:
             if tr.result.status == "passed":
-                passed.append(tr.testcase)
+                passed.add(tr.testcase)
             else:
-                failed.append(tr.testcase)
+                failed.add(tr.testcase)
         return passed, failed
     
     @classmethod
-    def is_all_pass(cls, program:Program) -> bool:
-        return all(tr.result.status == "passed" for tr in program.results)
+    def is_all_pass(cls, results:Results) -> bool:
+        return all(tr.result.status == "passed" for tr in results)
 
     @classmethod
     def _run(cls, cmd:list[str], *, cwd:str, stdin:str="") -> Result:

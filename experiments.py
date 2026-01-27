@@ -17,14 +17,13 @@ from src.execution import Tester, Programs, TestCases
 
 
 class Experiments:
-    def __init__(self, dataset:str="data",
+    def __init__(self,
         generations:int=3, pop_size:int=10, initialization:bool=False,
         selection:str="nsga3", threshold:float=0.5,
         llm:str="codellama:7b", temperature:float=0.8, timelimit:int=1,
         objectives:list=Fitness.OBJECTIVES, trials:int=10,
         sampling:bool=False, reset:bool=False, multi:bool=False
     ):  
-        self.dataset = dataset
         self.loader = Loader(sampling, initialization)
         
         self.generations = generations
@@ -69,7 +68,7 @@ class Experiments:
             "#References",
             "#Buggys",
             "#Fixed",
-            "%Accuracy",
+            "%Repair Rate",
             "%Similarity",
             "%Execution Time",
             "%Memory Usage"
@@ -185,7 +184,7 @@ class Experiments:
                 'patch': [patch.code]
             })
             df = pd.concat([df, new_row], ignore_index=True)
-        best_sol_path = os.path.join(results_dir, 'solutions', f'trial_{trial}.pkl')
+        best_sol_path = os.path.join(results_dir, 'solutions', f'trial_{trial}.csv')
         os.makedirs(os.path.dirname(best_sol_path), exist_ok=True)
         df.to_csv(best_sol_path, index=False)
 
@@ -201,7 +200,7 @@ class Experiments:
         # 안전: 컬럼명이 다르면 바로 종료(또는 raise)
         required_cols = [
             "#Trial", "#Generation", "#References", "#Buggys", "#Fixed",
-            "%Accuracy", "%Similarity", "%Execution Time", "%Memory Usage"
+            "%Repair Rate", "%Similarity", "%Execution Time", "%Memory Usage"
         ]
         for c in required_cols:
             if c not in df.columns:
@@ -225,14 +224,14 @@ class Experiments:
             except ValueError:
                 return 0.0
 
-        pct_cols = ["%Accuracy", "%Similarity", "%Execution Time", "%Memory Usage"]
+        pct_cols = ["%Repair Rate", "%Similarity", "%Execution Time", "%Memory Usage"]
         for c in pct_cols:
             dff[c] = dff[c].apply(pct_to_float)
 
         # 평균 계산 (final generation에서 trial별 row 평균)
         # (#Fixed도 평균 내서 "평균적으로 몇 개 고쳤나"를 보여줌)
         mean_fixed = float(dff["#Fixed"].mean()) if len(dff) else 0.0
-        mean_acc = float(dff["%Accuracy"].mean()) if len(dff) else 0.0
+        mean_acc = float(dff["%Repair Rate"].mean()) if len(dff) else 0.0
         mean_sim = float(dff["%Similarity"].mean()) if len(dff) else 0.0
         mean_time = float(dff["%Execution Time"].mean()) if len(dff) else 0.0
         mean_mem = float(dff["%Memory Usage"].mean()) if len(dff) else 0.0
@@ -242,7 +241,7 @@ class Experiments:
         total_bugs = int(dff["#Buggys"].iloc[0])
 
         # overall.csv에 누적 저장 (problem별 1 row)
-        overall_path = os.path.join(self.dataset, "overall.csv")
+        overall_path = os.path.join("results", "overall.csv")
         os.makedirs(os.path.dirname(overall_path), exist_ok=True)
 
         headers = [
@@ -253,7 +252,7 @@ class Experiments:
             "#References",
             "#Buggys",
             "#Fixed(avg)",
-            "%Accuracy(avg)",
+            "%Repair Rate(avg)",
             "%Similarity(avg)",
             "%Execution Time(avg)",
             "%Memory Usage(avg)",

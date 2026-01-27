@@ -3,7 +3,7 @@ from tqdm import tqdm
 from .selection import Selection
 from .variation import Variation
 from .fitness import Fitness
-from ..execution import Programs, Program
+from ..execution import Programs, Program, Tester
 
 class GeneticAlgorithm:
     def __init__(self,
@@ -45,15 +45,21 @@ class GeneticAlgorithm:
             # Selection
             parents = self.select.run(buggy, population, pop_size, selection)
             
-            # Crossover & Mutation
+            # LLM-guided Variation
             childs = self.variation.run(buggy, parents)
                 
             # Update Population
             for child in tqdm(childs, desc="Evaluation", position=2, leave=False):
                 # Duplicate Check
-                if any(child.code == pop.code for pop in population): continue
-                child.id = f"pop_{len(population)+1}"
-                population.append(child)
+                if all(child.code == pop.code for pop in population):
+                    child.id = f"pop_{len(population)+1}"
+                    population.append(child)
+                
+                # Validation
+                results = Tester.run(child)
+                if not Tester.is_all_pass(results): continue
+                
+                # Add to Solutions
                 solutions.append(child)
                 
                 # Early Stop Criterion Check
