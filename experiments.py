@@ -109,8 +109,9 @@ class Experiments:
                 generation_stats[gen]['accuracy'] += 1
                 
                 ## similarity
-                refer_sim = TED.compute_levenshtein_led(buggy.code, refer.code)
-                patch_sim = TED.compute_levenshtein_led(buggy.code, patch.code)
+                ted = TED(buggy.ext)
+                refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
+                patch_sim = ted.compute_levenshtein_led(buggy.code, patch.code)
                 generation_stats[gen]['similarity'] += self.ratio(
                     (refer_sim - patch_sim), (refer_sim + patch_sim))
                 
