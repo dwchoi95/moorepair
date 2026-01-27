@@ -33,12 +33,12 @@ USER_PROMPT = """# Inputs
 
 ## Buggy Program
 {buggy_program}
-### Test Results
+### Buggy Test Results
 {buggy_results}
 
 ## Reference Program
 {reference_program}
-### Test Results
+### Reference Test Results
 {reference_results}
 """
 
@@ -74,6 +74,14 @@ class Variation:
         guidelines = ''
         for i, obj in enumerate(priorities, 1):
             guidelines += f"  {i}. {self.fitness.guidelines[obj]}\n"
+            
+        b_passed, b_failed = Tester.tests_split(buggy.results)
+        r_passed, r_failed = Tester.tests_split(refer.results)
+        
+        buggy_results = f"Passed Test Cases IDs: {sorted([tc.id for tc in b_passed])}  \n"
+        buggy_results += f"Failed Test Cases IDs: {sorted([tc.id for tc in b_failed])}\n"
+        reference_results = f"Passed Test Cases IDs: {sorted([tc.id for tc in r_passed])}  \n"
+        reference_results += f"Failed Test Cases IDs: {sorted([tc.id for tc in r_failed])}\n"
         
         # System Prompt
         system = SYSTEM_PROMPT.format(
@@ -86,10 +94,14 @@ class Variation:
             description=self.description,
             test_cases=str(Tester.testcases),
             buggy_program=f"```{buggy.ext}\n{buggy.code}\n```",
-            buggy_results=str(buggy.results),
+            buggy_results=buggy_results,
             reference_program=f"```{refer.ext}\n{refer.code}\n```",
-            reference_results=str(refer.results),
+            reference_results=reference_results,
         )
+        # with open('logs/system.md', 'w') as f:
+        #     f.write(system)
+        # with open('logs/user.md', 'w') as f:
+        #     f.write(user)
         return system, user, OutFormat
     
     async def _task(self, buggy:Program, refer:Program):

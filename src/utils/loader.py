@@ -12,7 +12,7 @@ class Loader:
         dataset = json.loads(open(problem, 'r').read())
         assignment = dataset['assignment']
         problemId = assignment['id']
-        description = assignment['description']
+        description = assignment['description'].replace('\n', '  \n')
         submissions = dataset['submissions']
         references, buggys = [], []
         
@@ -34,11 +34,6 @@ class Loader:
             references = []
         
         testcases = dataset['test_cases']
-        testcases = [{
-            'id': t['id'],
-            'input': t['input'],
-            'output': t['output'],
-            } for t in testcases]
-        
+    
         return problemId, description, Programs(buggys), Programs(references), TestCases(testcases)
     

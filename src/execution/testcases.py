@@ -45,8 +45,9 @@ class TestCases:
         return self.testcases[idx]
     
     def __print(self, tc:TestCase) -> str:
-        prints = f'[Test Case Input {tc.id}]\n{tc.input}\n'
-        prints += f'[Test Case Output {tc.id}]\n{tc.output}\n'
+        prints = f'### Test Case ID: {tc.id}\n'
+        prints += f'[Input]\n```\n{tc.input}\n```\n'
+        prints += f'[Output]\n```\n{tc.output}\n```\n'
         return prints
     
     def get_tc_id_list(self) -> list:

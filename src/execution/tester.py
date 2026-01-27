@@ -12,7 +12,7 @@ from functools import cache
 from decimal import Decimal, InvalidOperation
 
 from .program import Program
-from .testcases import TestCases
+from .testcases import TestCases, TestCase
 from .results import Result, TestcaseResult, Results
 
 class Tester:
@@ -33,7 +33,7 @@ class Tester:
         cls.__run.cache_clear()
     
     @classmethod
-    def tests_split(cls, results:Results) -> tuple[set, set]:
+    def tests_split(cls, results:Results) -> tuple[set[TestCase], set[TestCase]]:
         passed, failed = set(), set()
         for tr in results:
             if tr.result.status == "passed":
