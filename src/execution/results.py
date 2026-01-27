@@ -8,9 +8,9 @@ class Result:
     status:str = field(metadata={"desc":"Status of the execution (e.g., passed, failed, timeout, error)"})
     stdout:str = field(metadata={"desc":"Standard output from the execution"})
     stderr:str = field(metadata={"desc":"Standard error from the execution"})
-    exit_code:int = field(metadata={"desc":"Exit code of the execution"})
-    runtime:float = field(default=0.0, metadata={"desc":"Execution time in seconds"})
-    memory:float = field(default=0.0, metadata={"desc":"Memory usage in megabytes"})
+    returncode:int = field(metadata={"desc":"Return code from the execution"})
+    exec_time:float = field(default=0.0, metadata={"desc":"Execution time in seconds"})
+    mem_usage:float = field(default=0.0, metadata={"desc":"Memory usage in megabytes"})
 
 @dataclass
 class TestcaseResult:
@@ -42,6 +42,11 @@ class Results:
             prints += self.__print(tr) + '\n\n'
         return prints.strip()
     
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return Results(self.ts[idx])
+        return self.ts[idx]
+    
     def __print(self, tr:TestcaseResult) -> str:
         br = '<br />'
         tc_input = tr.testcase.input.replace('\n', br)
@@ -59,16 +64,16 @@ class Results:
     def delete(self, testcase:TestCase):
         self.ts = [tr for tr in self.ts if tr.testcase.id != testcase.id]
     
-    def runtime(self) -> float:
-        total_runtime = 0.0
+    def exec_time(self) -> float:
+        total_exec_time = 0.0
         for tr in self.ts:
-            total_runtime += tr.result.runtime
-        return total_runtime
+            total_exec_time += tr.result.exec_time
+        return total_exec_time
     
-    def memory(self) -> float:
-        total_memory = 0.0
+    def mem_usage(self) -> float:
+        total_mem_usage = 0.0
         for tr in self.ts:
-            total_memory += tr.result.memory
-        return total_memory
+            total_mem_usage += tr.result.mem_usage
+        return total_mem_usage
     
     

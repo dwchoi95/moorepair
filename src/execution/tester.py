@@ -1,24 +1,31 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import re
 import os
 import time
-import signal
 import psutil
 import threading
 import subprocess
 import tempfile
 from functools import cache
-from multiprocess import Process, Queue
+from decimal import Decimal, InvalidOperation
 
 from .program import Program
 from .testcases import TestCases
 from .results import Result, TestcaseResult, Results
 
 class Tester:
+    _INT_RE = re.compile(r"^[+-]?\d+$")
+    _FLOAT_RE = re.compile(
+        r"^[+-]?("
+        r"(\d+\.\d*)|(\d*\.\d+)|(\d+)"
+        r")([eE][+-]?\d+)?$"
+    )
+    
     @classmethod
-    def init_globals(cls, testcases:list, timelimit:int=1):
-        cls.testcases = TestCases(testcases)
+    def init_globals(cls, testcases:TestCases, timelimit:int=1):
+        cls.testcases = testcases
         cls.timelimit = timelimit
     
     @classmethod
@@ -38,68 +45,123 @@ class Tester:
     @classmethod
     def is_all_pass(cls, program:Program) -> bool:
         return all(tr.result.status == "passed" for tr in program.results)
-        
-    @classmethod
-    def __run_process(cls, q, cmd, stdin, cwd):
-        start = time.perf_counter()
-        
-        p = subprocess.Popen(
-            cmd, cwd=cwd, text=True,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        
-        proc = psutil.Process(p.pid)
-        mem_usage = proc.memory_info().rss
-        for child in proc.children(recursive=True):
-            try:
-                mem_usage += child.memory_info().rss
-            except psutil.NoSuchProcess:
-                pass
-
-        status, out, err = "", "", ""
-        rc = -1
-        try:
-            out, err = p.communicate(input=stdin, timeout=cls.timelimit)
-            rc = p.returncode
-        except subprocess.TimeoutExpired:
-            p.kill()
-            status = "timeout"
-            out, err = p.communicate()
-
-        exec_time = time.perf_counter() - start
-        q.put((status, rc, out, err, exec_time, mem_usage))
 
     @classmethod
     def _run(cls, cmd:list[str], *, cwd:str, stdin:str="") -> Result:
-        q = Queue()
-        proc = Process(
-            target=cls.__run_process,
-            args=(q, cmd, stdin, cwd),
-        )
-        proc.start()
+        status = stdout = stderr = ""
+        returncode = -1
+        exec_time = cls.timelimit
+        mem_usage = 0 # in bytes
+        
+        def monitor(proc:psutil.Process):
+            nonlocal mem_usage
+            while True:
+                try:
+                    mem = proc.memory_info().rss
+                    try:
+                        for child in proc.children(recursive=True):
+                            mem += child.memory_info().rss
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                    mem_usage = max(mem_usage, mem)
+                except Exception:
+                    break
+                time.sleep(0.001)
     
         try:
-            status, rc, out, err, exec_time, mem_usage = q.get()
-            proc.join()
+            p = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                text=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            start = time.perf_counter()
+            proc = psutil.Process(p.pid)
+            
+            t = threading.Thread(target=monitor, args=(proc,), daemon=True)
+            t.start()
+            
+            try:
+                stdout, stderr = p.communicate(input=stdin, timeout=cls.timelimit)
+                exec_time = time.perf_counter() - start
+                returncode = p.returncode
+                status = "ok"
+            
+            except subprocess.TimeoutExpired:
+                p.kill()
+                stdout, stderr = p.communicate()
+                exec_time = cls.timelimit
+                status = "timeout"
+            
+            finally:
+                t.join(timeout=1)
+            
         except Exception as e:
             status = "error"
-            rc = -1
-            out = ""
-            err = str(e)
-        finally:
-            if proc.is_alive():
-                proc.terminate()
-                proc.join()
+            stderr = str(e)
         
         return Result(
                 status=status,
-                stdout=out,
-                stderr=err,
-                exit_code=rc,
-                runtime=exec_time,
-                memory=mem_usage
+                stdout=stdout,
+                stderr=stderr,
+                returncode=returncode,
+                exec_time=exec_time,
+                mem_usage=mem_usage
             )
+
+    @classmethod
+    def __is_equal(cls, expect:str, stdout:str) -> bool:
+        exp_toks = expect.split()
+        out_toks = stdout.split()
+        if len(exp_toks) != len(out_toks):
+            return False
+
+        for a, b in zip(exp_toks, out_toks):
+            if not cls._token_equal(a, b):
+                return False
+        return True
     
+    @classmethod
+    def _token_equal(cls, a:str, b:str) -> bool:
+        va = cls._parse_value(a)
+        vb = cls._parse_value(b)
+        da = cls._to_decimal(va)
+        db = cls._to_decimal(vb)
+        if da is not None and db is not None:
+            return da == db
+        return a == b
+
+    @classmethod
+    def _parse_value(cls, s:str):
+        sl = s.strip().lower()
+        if sl == "true":
+            return True
+        if sl == "false":
+            return False
+        if cls._INT_RE.match(s):
+            try:
+                return int(s, 10)
+            except ValueError:
+                return s
+        if cls._FLOAT_RE.match(s):
+            try:
+                return Decimal(s)
+            except (InvalidOperation, ValueError):
+                return s
+        return s
+
+    @classmethod
+    def _to_decimal(cls, v):
+        if isinstance(v, bool):
+            return Decimal(1 if v else 0)
+        if isinstance(v, int):
+            return Decimal(v)
+        if isinstance(v, Decimal):
+            return v
+        return None
+        
     
     @classmethod
     def _validation(cls, res:Result, exe:list, td:str) -> Results:
@@ -107,11 +169,11 @@ class Tester:
         ts = []
         for tc in cls.testcases:
             # Compilation Error
-            if res.exit_code != 0:
+            if res.returncode != 0:
                 ts.append(TestcaseResult(testcase=tc, result=res))
                 continue
             res = cls._run(exe, cwd=td, stdin=tc.input)
-            passed = (res.stdout.strip() == tc.output.strip()) and res.exit_code == 0
+            passed = cls.__is_equal(tc.output, res.stdout) and res.returncode == 0
             res.status = "passed" if passed else "failed"
             ts.append(TestcaseResult(testcase=tc, result=res))
         return Results(ts)
@@ -164,7 +226,7 @@ class Tester:
                     status="error",
                     stdout="",
                     stderr=str(e),
-                    exit_code=-1,
+                    returncode=-1,
                 )
             exe = ["python3", "main.py"]
             return cls._validation(res, [exe], td)
@@ -176,7 +238,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = Result(status="", stdout="", stderr="", exit_code=0, timed_out=False)
+            res = Result(status="", stdout="", stderr="", returncode=0, timed_out=False)
             exe = ["node", "main.js"]
             return cls._validation(res, [exe], td)
 
@@ -187,7 +249,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = Result(status="", stdout="", stderr="", exit_code=0, timed_out=False)
+            res = Result(status="", stdout="", stderr="", returncode=0, timed_out=False)
             exe = ["Rscript", "main.R"]
             return cls._validation(res, [exe], td)
 

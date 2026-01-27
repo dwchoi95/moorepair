@@ -3,31 +3,20 @@ from tqdm import tqdm
 from .selection import Selection
 from .variation import Variation
 from .fitness import Fitness
-from ..llms import OpenAI, Ollama
-from ..execution import Tester, Programs, Program
+from ..execution import Programs, Program
 
 class GeneticAlgorithm:
     def __init__(self,
         buggys:Programs,
         references:Programs,
         description:str,
-        llm:str="gpt-3.5-turbo",
-        temperature:float=0.8,
-        objectives:list=Fitness.OBJECTIVES
+        fitness:Fitness=Fitness(),
     ):
         self.buggys = buggys
         self.references = references
-        self.objectives = objectives
         
-        model = self._select_model(llm, temperature)
-        self.fitness = Fitness(objectives)
-        self.select = Selection(self.fitness)
-        self.variation = Variation(model, description, self.fitness)
-    
-    def _select_model(self, llm:str, temperature:float):
-        if llm.startswith("gpt"):
-            return OpenAI(llm, temperature)
-        return Ollama(llm, temperature)
+        self.select = Selection(fitness)
+        self.variation = Variation(fitness, description)
     
     def _init_population(self, buggy:Program, pop_size:int) -> Programs:
         population = Programs([ref for ref in self.references if ref.ext == buggy.ext])
@@ -43,18 +32,6 @@ class GeneticAlgorithm:
                 tbar.update(1)
         tbar.close()
         return population
-        
-    def _validation(self, patch:Program) -> bool:
-        # Check the patch is solution
-        try:
-            Tester.run(patch)
-            if Tester.is_all_pass(patch):
-                return True
-        except Exception as e:
-            print(e)
-            print(patch.code)
-            print(patch.ext)
-        return False
     
     def _ga_run(self, buggy:Program, generations:int, 
                 pop_size:int, selection:str, threshold:int) -> dict:
@@ -72,20 +49,12 @@ class GeneticAlgorithm:
             childs = self.variation.run(buggy, parents)
                 
             # Update Population
-            for child in childs:
+            for child in tqdm(childs, desc="Evaluation", position=2, leave=False):
                 # Duplicate Check
                 if any(child.code == pop.code for pop in population): continue
                 child.id = f"pop_{len(population)+1}"
                 population.append(child)
-
-            # Add Solutions
-            for patch in tqdm(population, desc="Evaluation", position=2, leave=False):
-                if any(patch.code == sol.code for sol in solutions): continue
-                
-                # Patch Validation
-                passed = self._validation(patch)
-                if not passed: continue
-                solutions.append(patch)
+                solutions.append(child)
                 
                 # Early Stop Criterion Check
                 if len(solutions) >= threshold:

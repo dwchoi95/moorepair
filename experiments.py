@@ -1,46 +1,45 @@
 import os
+import csv
 import json
+import pickle
 import time
 import math
-import dataset
 import pandas as pd
 from tqdm import tqdm
-from texttable import Texttable
 from prettytable import PrettyTable
 import warnings
 warnings.filterwarnings('ignore')
 
+from src.llms import Spec
 from src.genetic import GA, Fitness, Selection
-from src.utils import ETC, TED, Setup
-from src.execution import Tester, Programs
+from src.utils import ETC, TED, Loader
+from src.execution import Tester, Programs, TestCases
 
 
 class Experiments:
-    def __init__(self,
+    def __init__(self, dataset:str="data",
         generations:int=3, pop_size:int=10, initialization:bool=False,
         selection:str="nsga3", threshold:float=0.5,
-        llm:str="gpt-3.5-turbo", temperature:float=0.8, timelimit:int=1,
+        llm:str="codellama:7b", temperature:float=0.8, timelimit:int=1,
         objectives:list=Fitness.OBJECTIVES, trials:int=10,
         sampling:bool=False, reset:bool=False, multi:bool=False
-    ):
-        self.setup = Setup(sampling, initialization)
+    ):  
+        self.dataset = dataset
+        self.loader = Loader(sampling, initialization)
         
         self.generations = generations
         self.pop_size = pop_size
         self.selection = selection
         self.threshold = threshold
         self.timelimit = timelimit
-        self.objectives = objectives
-        self.llm = llm
-        self.temperature = temperature
+        self.fitness = Fitness(objectives)
+        self.select = Selection(self.fitness)
+        Spec.set(llm, temperature)
         self.trials = trials
         self.reset = reset
         self.multi = multi
         
-        self.obj = "".join(self.objectives)
-        
-        # 전체 실험 결과 저장용
-        self.all_experiments = {}  # {problemId: {trial: {gen: stats}}}
+        self.obj = "".join(objectives)
     
     def ratio(self, numerator: float, denominator: float) -> float:
         if numerator == 0 or denominator == 0:
@@ -52,12 +51,29 @@ class Experiments:
         
     def __save_results(self, trial:int, problemId:int, 
                        buggys:Programs, references:Programs, 
-                       results:dict[str, dict[int, Programs]], 
-                       fitness:Fitness, select:Selection) -> dict:
+                       results:dict[str, dict[int, Programs]]) -> None:
         
         # Save Results
+        results_dir = os.path.join('results', str(problemId), self.selection)
+        ## Save raw results
+        raw_results_path = os.path.join(results_dir, 'raw', f'trial_{trial}.pkl')
+        os.makedirs(os.path.dirname(raw_results_path), exist_ok=True)
+        with open(raw_results_path, 'wb') as f:
+            pickle.dump(results, f)
+        
         final = []
         generation_stats = {}
+        table = PrettyTable([
+            "#Trial",
+            "#Generation",
+            "#References",
+            "#Buggys",
+            "#Fixed",
+            "%Accuracy",
+            "%Similarity",
+            "%Execution Time",
+            "%Memory Usage"
+        ])
         
         for b_id, result in tqdm(results.items(), desc="Save", leave=False):
             # No solution found
@@ -83,29 +99,29 @@ class Experiments:
                 # Selection of best solution for this generation
                 scoring = {}
                 for patch in solutions:
-                    scores = fitness.run(buggy, patch)
+                    scores = self.fitness.run(buggy, patch)
                     scoring[patch.id] = scores
                 if not scoring: continue
-                sol_id = select.hype(scoring)
+                sol_id = self.select.hype(scoring)
                 patch = solutions.get_prog_by_id(sol_id)
                 # Evaluation
                 ## accuracy
                 generation_stats[gen]['accuracy'] += 1
                 
                 ## similarity
-                refer_sim = fitness.codebleu(buggy.code, refer.code, buggy.ext)
-                patch_sim = fitness.codebleu(buggy.code, patch.code, buggy.ext)
+                refer_sim = TED.compute_levenshtein_led(buggy.code, refer.code)
+                patch_sim = TED.compute_levenshtein_led(buggy.code, patch.code)
                 generation_stats[gen]['similarity'] += self.ratio(
                     (refer_sim - patch_sim), (refer_sim + patch_sim))
                 
                 ## efficiency
-                refer_time = refer.results.runtime()
-                patch_time = patch.results.runtime()
+                refer_time = refer.results.exec_time()
+                patch_time = patch.results.exec_time()
                 generation_stats[gen]['runtime'] += self.ratio(
                     (refer_time - patch_time), (refer_time + patch_time))
                 
-                refer_mem = refer.results.memory()
-                patch_mem = patch.results.memory()
+                refer_mem = refer.results.mem_usage()
+                patch_mem = patch.results.mem_usage()
                 generation_stats[gen]['memory'] += self.ratio(
                     (refer_mem - patch_mem), (refer_mem + patch_mem))
                 
@@ -115,24 +131,19 @@ class Experiments:
                 if gen == max(result.keys()):
                     final.append((buggy, refer, patch))
                          
-        table = PrettyTable([
-            "#Generation",
-            "#Solutions",
-            "#Fixed",
-            "%Accuracy",
-            "%Similarity",
-            "%Runtime",
-            "%Memory"
-        ])
-        total_bugs = len([r for r in results.values() if r])
+        
+        total_bugs = len(buggys)
+        total_refs = len(references)
         for gen in sorted(generation_stats.keys()):
             stats = generation_stats[gen]
             count = stats['count']
             
             if count > 0:
                 table.add_row([
+                    trial,
                     gen,
-                    stats['num_solutions'],
+                    total_refs,
+                    total_bugs,
                     count,
                     f"{(stats['accuracy'] / total_bugs * 100):.2f}%",
                     f"{(stats['similarity'] / count * 100):.2f}%",
@@ -141,8 +152,10 @@ class Experiments:
                 ])
             else:
                 table.add_row([
+                    trial,
                     gen,
-                    stats['num_solutions'],
+                    total_refs,
+                    total_bugs,
                     0,
                     "0.00%",
                     "0.00%",
@@ -151,7 +164,16 @@ class Experiments:
                 ])
         
         print(table)
-                
+        summary_path = os.path.join(results_dir, 'summary.csv')
+        headers = table.field_names
+        rows = table._rows
+        file_exists = os.path.exists(summary_path) and os.path.getsize(summary_path) > 0
+        with open(summary_path, mode='a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(headers)
+            writer.writerows(rows)
+        
         # Save Final Solutions
         df = pd.DataFrame(columns=['ID', 'buggy', 'correct', 'patch'])
         for buggy, refer, patch in final:
@@ -162,181 +184,122 @@ class Experiments:
                 'patch': [patch.code]
             })
             df = pd.concat([df, new_row], ignore_index=True)
-        
-        results_path = f'results/{problemId}/{self.selection}/solutions_{trial}.csv'
-        os.makedirs(os.path.dirname(results_path), exist_ok=True)
-        df.to_csv(results_path, index=False)
-        
-        # generation_stats에 total_bugs 정보 추가
-        for gen in generation_stats:
-            generation_stats[gen]['total_bugs'] = total_bugs
-        
-        return generation_stats
+        best_sol_path = os.path.join(results_dir, 'solutions', f'trial_{trial}.pkl')
+        os.makedirs(os.path.dirname(best_sol_path), exist_ok=True)
+        df.to_csv(best_sol_path, index=False)
 
-    def __save_experiments(self, problemId:int) -> None:
-        """전체 실험(모든 trial)에 대한 통계를 계산하고 저장"""
-        # Generation별 전체 trial 통계 집계
-        aggregated_stats = {}
+    def __save_experiments(self, problemId: int) -> None:
+        # per-problem summary path
+        results_dir = os.path.join('results', str(problemId), self.selection)
+        summary_path = os.path.join(results_dir, 'summary.csv')
+        if not os.path.exists(summary_path) or os.path.getsize(summary_path) == 0:
+            return  # nothing to aggregate
+
+        df = pd.read_csv(summary_path)
+
+        # 안전: 컬럼명이 다르면 바로 종료(또는 raise)
+        required_cols = [
+            "#Trial", "#Generation", "#References", "#Buggys", "#Fixed",
+            "%Accuracy", "%Similarity", "%Execution Time", "%Memory Usage"
+        ]
+        for c in required_cols:
+            if c not in df.columns:
+                return
+
+        # 최종 generation만 사용
+        final_gen = int(df["#Generation"].max())
+        dff = df[df["#Generation"] == final_gen].copy()
+        if dff.empty:
+            return
+
+        # 퍼센트 문자열 -> float 변환
+        def pct_to_float(x):
+            if pd.isna(x):
+                return 0.0
+            s = str(x).strip()
+            if s.endswith("%"):
+                s = s[:-1]
+            try:
+                return float(s)
+            except ValueError:
+                return 0.0
+
+        pct_cols = ["%Accuracy", "%Similarity", "%Execution Time", "%Memory Usage"]
+        for c in pct_cols:
+            dff[c] = dff[c].apply(pct_to_float)
+
+        # 평균 계산 (final generation에서 trial별 row 평균)
+        # (#Fixed도 평균 내서 "평균적으로 몇 개 고쳤나"를 보여줌)
+        mean_fixed = float(dff["#Fixed"].mean()) if len(dff) else 0.0
+        mean_acc = float(dff["%Accuracy"].mean()) if len(dff) else 0.0
+        mean_sim = float(dff["%Similarity"].mean()) if len(dff) else 0.0
+        mean_time = float(dff["%Execution Time"].mean()) if len(dff) else 0.0
+        mean_mem = float(dff["%Memory Usage"].mean()) if len(dff) else 0.0
+
+        # references/buggys는 고정값이라 첫 row 사용
+        total_refs = int(dff["#References"].iloc[0])
+        total_bugs = int(dff["#Buggys"].iloc[0])
+
+        # overall.csv에 누적 저장 (problem별 1 row)
+        overall_path = os.path.join(self.dataset, "overall.csv")
+        os.makedirs(os.path.dirname(overall_path), exist_ok=True)
+
+        headers = [
+            "ProblemID",
+            "Selection",
+            "#Trials",
+            "#FinalGeneration",
+            "#References",
+            "#Buggys",
+            "#Fixed(avg)",
+            "%Accuracy(avg)",
+            "%Similarity(avg)",
+            "%Execution Time(avg)",
+            "%Memory Usage(avg)",
+        ]
+
+        row = [
+            problemId,
+            self.selection,
+            int(dff["#Trial"].nunique()),
+            final_gen,
+            total_refs,
+            total_bugs,
+            f"{mean_fixed:.2f}",
+            f"{mean_acc:.2f}%",
+            f"{mean_sim:.2f}%",
+            f"{mean_time:.2f}%",
+            f"{mean_mem:.2f}%",
+        ]
+
+        file_exists = os.path.exists(overall_path) and os.path.getsize(overall_path) > 0
+        with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(headers)
+            writer.writerow(row)
         
-        for trial, gen_stats in self.all_experiments[problemId].items():
-            for gen, stats in gen_stats.items():
-                if gen not in aggregated_stats:
-                    aggregated_stats[gen] = {
-                        'accuracy': [],
-                        'similarity': [],
-                        'runtime': [],
-                        'memory': [],
-                        'num_solutions': [],
-                        'count': [],
-                        'total_bugs': []
-                    }
-                
-                # 각 trial의 데이터를 리스트에 추가
-                aggregated_stats[gen]['accuracy'].append(stats['accuracy'])
-                aggregated_stats[gen]['similarity'].append(stats['similarity'])
-                aggregated_stats[gen]['runtime'].append(stats['runtime'])
-                aggregated_stats[gen]['memory'].append(stats['memory'])
-                aggregated_stats[gen]['num_solutions'].append(stats['num_solutions'])
-                aggregated_stats[gen]['count'].append(stats['count'])
-                aggregated_stats[gen]['total_bugs'].append(stats['total_bugs'])
-        
-        # 평균 계산 및 테이블 생성
-        summary_table = PrettyTable([
-            "#Generation",
-            "Avg #Solutions",
-            "Avg #Fixed",
-            "Avg %Accuracy",
-            "Avg %Similarity",
-            "Avg %Runtime",
-            "Avg %Memory"
-        ])
-        
-        # CSV 저장용 데이터
-        csv_data = []
-        
-        for gen in sorted(aggregated_stats.keys()):
-            stats = aggregated_stats[gen]
-            
-            avg_solutions = sum(stats['num_solutions']) / len(stats['num_solutions'])
-            avg_fixed = sum(stats['count']) / len(stats['count'])
-            avg_total_bugs = sum(stats['total_bugs']) / len(stats['total_bugs'])
-            
-            # Accuracy 계산 (각 trial의 accuracy rate를 평균)
-            accuracy_rates = [
-                (acc / total * 100) if total > 0 else 0 
-                for acc, total in zip(stats['accuracy'], stats['total_bugs'])
-            ]
-            avg_accuracy = sum(accuracy_rates) / len(accuracy_rates) if accuracy_rates else 0
-            
-            # 다른 메트릭들의 평균 계산
-            avg_similarity = sum(
-                [sim / cnt * 100 if cnt > 0 else 0 
-                 for sim, cnt in zip(stats['similarity'], stats['count'])]
-            ) / len(stats['count']) if stats['count'] else 0
-            
-            avg_runtime = sum(
-                [rt / cnt * 100 if cnt > 0 else 0 
-                 for rt, cnt in zip(stats['runtime'], stats['count'])]
-            ) / len(stats['count']) if stats['count'] else 0
-            
-            avg_memory = sum(
-                [mem / cnt * 100 if cnt > 0 else 0 
-                 for mem, cnt in zip(stats['memory'], stats['count'])]
-            ) / len(stats['count']) if stats['count'] else 0
-            
-            summary_table.add_row([
-                gen,
-                f"{avg_solutions:.2f}",
-                f"{avg_fixed:.2f}",
-                f"{avg_accuracy:.2f}%",
-                f"{avg_similarity:.2f}%",
-                f"{avg_runtime:.2f}%",
-                f"{avg_memory:.2f}%"
-            ])
-            
-            # CSV 데이터 추가
-            csv_data.append({
-                'Generation': gen,
-                'Avg_Solutions': avg_solutions,
-                'Avg_Fixed': avg_fixed,
-                'Avg_Accuracy': avg_accuracy,
-                'Avg_Similarity': avg_similarity,
-                'Avg_Runtime': avg_runtime,
-                'Avg_Memory': avg_memory,
-                'Trials': len(stats['count'])
-            })
-        
-        # 결과 출력
-        print(summary_table)
-        
-        # CSV로 저장
-        summary_df = pd.DataFrame(csv_data)
-        summary_path = f'results/{problemId}/{self.selection}/summary_all_trials.csv'
-        os.makedirs(os.path.dirname(summary_path), exist_ok=True)
-        summary_df.to_csv(summary_path, index=False)
-        
-        # Trial별 상세 결과도 저장
-        detailed_data = []
-        for trial in sorted(self.all_experiments[problemId].keys()):
-            gen_stats = self.all_experiments[problemId][trial]
-            for gen in sorted(gen_stats.keys()):
-                stats = gen_stats[gen]
-                total_bugs = stats['total_bugs']
-                count = stats['count']
-                
-                detailed_data.append({
-                    'Trial': trial,
-                    'Generation': gen,
-                    'Solutions': stats['num_solutions'],
-                    'Fixed': count,
-                    'Total_Bugs': total_bugs,
-                    'Accuracy': (stats['accuracy'] / total_bugs * 100) if total_bugs > 0 else 0,
-                    'Similarity': (stats['similarity'] / count * 100) if count > 0 else 0,
-                    'Runtime': (stats['runtime'] / count * 100) if count > 0 else 0,
-                    'Memory': (stats['memory'] / count * 100) if count > 0 else 0
-                })
-        
-        detailed_df = pd.DataFrame(detailed_data)
-        detailed_path = f'results/{problemId}/{self.selection}/detailed_all_trials.csv'
-        os.makedirs(os.path.dirname(detailed_path), exist_ok=True)
-        detailed_df.to_csv(detailed_path, index=False)
 
     def __core(self, trial:int, problemId:int, description:str,
-               buggys:Programs, references:Programs, testcases:list):
+               buggys:Programs, references:Programs, testcases:TestCases):
         # Generate Feedback
         Tester.init_globals(testcases, self.timelimit)
-        ga = GA(buggys, references, description,
-                self.llm, self.temperature, self.objectives)
-        start_time = time.process_time()
+        ga = GA(buggys, references, description, self.fitness)
         # Run MooRepair
         results = ga.run(self.generations, self.pop_size, 
                             self.selection, self.threshold)
-        time_taken = time.process_time() - start_time
-        
-        # 결과 저장 및 통계 반환
-        generation_stats = self.__save_results(
-            trial, problemId, buggys, references, 
-            results, ga.fitness, ga.select
+        # Save Results
+        self.__save_results(
+            trial, problemId, buggys, references, results
         )
-        
-        return generation_stats, time_taken
             
     def run(self, problems:list):
         for problem in problems:
             problemId, description, buggys, \
-                references, testcases = self.setup.run(problem)
-            
-            # 해당 problem의 실험 데이터 초기화
-            self.all_experiments[problemId] = {}
-            
+                references, testcases = self.loader.run(problem)
             for trial in range(1, self.trials+1):
-                generation_stats, time_taken = self.__core(
+                self.__core(
                     trial, problemId, description,
                     buggys, references, testcases
                 )
-                
-                # 결과 저장
-                self.all_experiments[problemId][trial] = generation_stats
-            
-            # 전체 실험 결과 요약
             self.__save_experiments(problemId)

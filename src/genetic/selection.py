@@ -20,8 +20,10 @@ class MOO(Problem):
         self.fitness = np.array([scores[k] for k in self.keys], dtype=float)
         # set number of variables equal to number of objectives
         n_var = self.n_obj
-        xl = np.array([0.0] * self.n_obj)
-        xu = np.array([1.0] * self.n_obj)
+        # xl = np.array([0.0] * self.n_obj)
+        # xu = np.array([1.0] * self.n_obj)
+        xl = np.min(self.fitness, axis=0)
+        xu = np.max(self.fitness, axis=0)
 
         super().__init__(
             n_var=n_var,
@@ -36,10 +38,10 @@ class MOO(Problem):
         dists = np.linalg.norm(self.fitness[None, :, :] - X[:, None, :], axis=2)
         idx = np.argmin(dists, axis=1)
         F = self.fitness[idx]
-        out['F'] = -F
+        out['F'] = F # maxmize(-F), minimize(F)
 
 class Selection:
-    def __init__(self, fitness:Fitness=Fitness()):
+    def __init__(self, fitness:Fitness):
         self.fitness = fitness
     
     def random(self, scores:dict, pop_size:int) -> list:
@@ -114,6 +116,7 @@ class Selection:
         if algo == "nsga3":
             algo = NSGA3(ref_dirs, 
                          n_offsprings=pop_size,
+                        #  pop_size=pop_size,
                         #  eliminate_duplicates=True
                          )
         elif algo == "rnsga3":
@@ -162,7 +165,7 @@ class Selection:
             selected = self.hype(scores, pop_size)
         else:
             raise ValueError(f"Invalid selection method: {selection}. Choose from {SELECTIONS}.")
-            
+        
         programs = [refer for refer in references if refer.id in selected]
         return Programs(programs)
     

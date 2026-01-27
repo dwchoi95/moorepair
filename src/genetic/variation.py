@@ -1,72 +1,58 @@
-import math
 from .fitness import Fitness
 from .crossover import Crossover
 from .mutation import Mutation
 
-from ..execution import Program, Programs
+from ..execution import Tester, Program, Programs
 from ..utils import Randoms
     
 class Variation:
     def __init__(self, 
-                 model,
-                 description:str="",
-                 fitness:Fitness=Fitness()):
-        self.fitness = fitness
-        self.guidelines = fitness.guidelines
-        self.crossover = Crossover(model, description)
-        self.mutation = Mutation(model, description)
+                 fitness:Fitness,
+                 description:str=""):
+        self.description = description
+        self.crossover = Crossover(fitness, description)
+        self.mutation = Mutation(fitness, description)
     
-    def stochastic_universal_sampling(self, evaluates:dict) -> list:
-        if not evaluates:
-            raise ValueError("evaluates must not be empty")
-
-        EPS = 1e-12
-        items = []
-        min_w = float('inf')
-
-        for k, v in evaluates.items():
-            base = float(v) if isinstance(v, (int, float)) and math.isfinite(v) else 0.0
-            w = 1.0 - base
-            if math.isclose(w, 0.0, abs_tol=EPS) or math.isclose(base, 1.0, abs_tol=EPS):
-                continue
-            items.append((k, w))
-            if w < min_w:
-                min_w = w
-
-        if not items:
-            raise ValueError("No eligible items after excluding entries with v == 1.0 (or 1 - v == 0).")
-
-        if min_w < 0.0:
-            shift = -min_w
-            items = [(k, w + shift) for k, w in items]
-
-        total = sum(w for _, w in items)
-        if total <= 0.0:
-            return Randoms.choice([k for k, _ in items])
-
-        pointer = Randoms.random() * total
-        acc = 0.0
-        for k, w in items:
-            acc += w
-            if acc >= pointer:
-                return k
-        return items[-1][0]
+    def cross_validation(self, refer_1:str, refer_2:str, offspring:str) -> bool:
+        from ..llms import Tokenizer
+        tok_1 = Tokenizer.parse(refer_1)
+        tok_2 = Tokenizer.parse(refer_2)
+        tok_set = set(tok_1 + tok_2)
+        tok_off = Tokenizer.parse(offspring)
+        for tok in set(tok_off):
+            if tok not in tok_set:
+                return False
+        return True
+    
+    def tests_validation(self, program:Program) -> bool:
+        Tester.run(program)
+        return Tester.is_all_pass(program)
     
     def run(self, buggy:Program, programs:Programs) -> Programs:
         # Crossover
-        offsprings = self.crossover.run(programs)
+        offsprings = Programs()
+        childs: Programs = self.crossover.run(buggy, programs)
+        for child in childs:
+            parent1= child.meta.get("parent1")
+            parent2= child.meta.get("parent2")
+            if not self.cross_validation(
+                refer_1=programs.get_prog_by_id(parent1).code,
+                refer_2=programs.get_prog_by_id(parent2).code,
+                offspring=child.code
+            ):
+                continue
+            if not self.tests_validation(child):
+                continue
+            offsprings.append(child)
         if len(offsprings) < len(programs):
             supplement = Randoms.sample(list(programs), k=len(programs)-len(offsprings))
             offsprings.extend(supplement)
         
         # Mutation
-        pairs = []
-        for offs in offsprings:
-            evaluates = self.fitness.run(buggy, offs)
-            obj = self.stochastic_universal_sampling(evaluates)
-            guideline = self.guidelines.get(obj, None)
-            if guideline is None:
-                guideline = Randoms.choice(list(self.guidelines.values()))
-            pairs.append((offs, guideline))
-        mutants = self.mutation.run(pairs)
+        mutants = Programs()
+        childs: Programs = self.mutation.run(buggy, offsprings)
+        for child in childs:
+            if not self.tests_validation(child):
+                continue
+            mutants.append(child)
         return mutants

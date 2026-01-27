@@ -4,7 +4,8 @@ from apted.apted import APTED
 from apted.helpers import Tree
 from functools import cache
 import Levenshtein
-
+import logging
+from codebleu import calc_codebleu
 
 class TED:
     LANGUAGE_PACKAGES = {
@@ -12,9 +13,10 @@ class TED:
     }
 
     def __init__(self, language: str):
-        if language not in self.LANGUAGE_PACKAGES:
-            raise ValueError(f"Unsupported language: {language}")
-        lang = Language(self.LANGUAGE_PACKAGES[language])
+        self.language = language.lower()
+        if self.language not in self.LANGUAGE_PACKAGES:
+            raise ValueError(f"Unsupported language: {self.language}")
+        lang = Language(self.LANGUAGE_PACKAGES[self.language])
         self.parser = Parser(lang)
 
     def clear_cache(self):
@@ -25,7 +27,7 @@ class TED:
         self.relative_patch_size.cache_clear()
         self._to_node_sequence.cache_clear()
         self.compute_levenshtein_ted.cache_clear()
-        self.compute_levenshtein_sim.cache_clear()
+        self.compute_levenshtein_led.cache_clear()
 
     def __compute_ast_size(self, tree):
         """
@@ -80,6 +82,20 @@ class TED:
         return apted.compute_edit_distance()
 
     @cache
+    def compute_levenshtein_led(self, code1:str, code2:str):
+        """
+        Computes the edit distance between two Line(s) using Levenshtein distance
+        on the sequence of node types.
+        """
+        seq1 = [line for line in code1.splitlines() if line.strip()]
+        seq2 = [line for line in code2.splitlines() if line.strip()]
+        seq_set = set(seq1).union(set(seq2))
+        char_map = {node: chr(i + 1) for i, node in enumerate(seq_set)}
+        str1 = ''.join(char_map[node] for node in seq1)
+        str2 = ''.join(char_map[node] for node in seq2)
+        return Levenshtein.distance(str1, str2)
+    
+    @cache
     def compute_levenshtein_ted(self, code1, code2):
         """
         Computes the edit distance between two ASTs using Levenshtein distance
@@ -119,6 +135,20 @@ class TED:
         ted = apted.compute_edit_distance()
         buggy_size = self.__compute_ast_size(buggy_tree)
         return round(ted / buggy_size, 2)
+    
+    @cache
+    def codebleu(self, code1, code2):
+        if code2 is None or code2.strip() == "":
+            return 0.0
+        logging.disable(logging.WARNING)
+        try:
+            return calc_codebleu(
+                [code1],
+                [code2],
+                lang=self.language
+            )["codebleu"]
+        finally:
+            logging.disable(logging.NOTSET)
 
 
 

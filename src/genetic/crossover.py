@@ -2,28 +2,34 @@ import asyncio
 from tqdm.asyncio import tqdm as tqdm_async
 from pydantic import BaseModel
 
-from ..llms import OpenAI, Ollama
+from .fitness import Fitness
 from ..execution import Tester, Programs, Program
+from ..utils import Randoms
+
 
 class OutFormat(BaseModel):
     offsprings: list[str]
 
-SYSTEM_PROMPT = '''# Identity
+SYSTEM_PROMPT = '''# Role
 
-You are an expert in program synthesis systems specializing in genetic programming crossover.
+You are an expert programming tutor who helps to fix buggy program by combining code snippets from reference programs.
 
+# Task
 
-# Instructions
+You will be given a 'Buggy Program', 'Problem Description', a set of 'Test Cases', and 'Reference Programs' as Inputs.
+Generate two 'Fixed Programs' by crossover the code snippets of the given 'Reference Programs' according to the following guidelines:
+  - Use only the given code of 'Reference Programs'
+  - 'Fixed Program' must pass all 'Test Cases'
+{guidelines}
 
-You will be given a 'Problem Description', a set of 'Test Cases', and 'Buggy Programs' as Inputs.
-Crossover the code of the given 'Buggy Programs' according to the following guidelines:
-  - Use only the given code of 'Buggy Programs'
-  - Make sure there are no compilation errors
-
-Outputs should be a {pop_size} 'Fixed Programs' as List[str].
+# Output Format
+Outputs should be a list of 'Fixed Programs' as list[str].
 '''
 
 USER_PROMPT = """# Inputs
+
+## Buggy Program
+{buggy_program}
 
 ## Problem Description
 {description}
@@ -31,53 +37,78 @@ USER_PROMPT = """# Inputs
 ## Test Cases
 {test_cases}
 
-## Buggy Programs
-{programs}
+## Reference Programs
+### Reference Program 1
+{reference_program_1}
+
+### Reference Program 2
+{reference_program_2}
 """
 
 class Crossover:
-    def __init__(self, model:OpenAI|Ollama, description:str=""):
-        self.model = model
+    def __init__(self, fitness:Fitness, description:str=""):
+        self.fitness = fitness
         self.description = description
     
-    def make_prompt(self, programs:Programs) -> tuple[str, str]:
+    def make_pairs(self, buggy:Program, programs:Programs) -> Programs:
+        pairs = Programs()
+        shuffled = list(programs)
+        Randoms.shuffle(shuffled)
+        for i in range(0, len(shuffled)-1, 2):
+            p1 = self.fitness.run(buggy, shuffled[i])
+            p2 = self.fitness.run(buggy, shuffled[i+1])
+            better = sum(1 for obj in self.fitness.OBJECTIVES if p1.get(obj, 0) < p2.get(obj, 0))
+            if better == 0 or better == len(self.fitness.OBJECTIVES):
+                continue
+            pairs.append(shuffled[i])
+            pairs.append(shuffled[i+1])
+        return pairs
+
+    def make_prompt(self, buggy:Program, refer_1:Program, refer_2:Program):
         # System Prompt
-        system = SYSTEM_PROMPT.format(pop_size=len(programs))
+        system = SYSTEM_PROMPT.format(guidelines="\n".join(
+            list(self.fitness.guidelines.values())))
         
         # User Prompt
         user = USER_PROMPT.format(
+            buggy_program=f"```{buggy.ext}\n{buggy.code}\n```",
             description=self.description,
             test_cases=str(Tester.testcases),
-            programs="\n\n".join([f"### Buggy Program {i}\n```{p.ext}\n{p.code}\n```" 
-                                  for i, p in enumerate(programs, start=1)])
+            reference_program_1=f"```{refer_1.ext}\n{refer_1.code}\n```",
+            reference_program_2=f"```{refer_2.ext}\n{refer_2.code}\n```"
         )
         return system, user, OutFormat
     
-    async def _task(self, programs:Programs):
-        a_async = await self.model.run(*self.make_prompt(programs))
-        return a_async
-    
-    async def __run_async(self, programs:Programs) -> Programs:
-        # Run single task
-        offsprings = []
-        pbar = tqdm_async(total=len(programs), desc='Crossover', leave=False, position=2)
-        response: OutFormat = await self._task(programs)
-        try: results = response.offsprings
-        except: results = []
-        for prog, patch in zip(programs, results):
-            offsprings.append(Program(
-                id=f"cross_{len(offsprings)+1}",
-                code=patch,
-                ext=prog.ext
-            ))
+    async def _task(self, buggy:Program, refer_1:Program, refer_2:Program):
+        from ..llms import Spec
+        a_async = await Spec.model.run(*self.make_prompt(buggy, refer_1, refer_2))
+        return a_async, refer_1, refer_2
+
+    async def __run_async(self, buggy:Program, programs:Programs) -> Programs:
+        pairs = self.make_pairs(buggy, programs)
+        tasks = [asyncio.create_task(self._task(buggy, pairs[i], pairs[i+1])) 
+                 for i in range(0, len(pairs)-1, 2)]
+        
+        offsprings = [] if len(pairs) % 2 == 0 else [pairs[-1]]
+        pbar = tqdm_async(total=len(pairs), desc='Crossover', leave=False, position=2)
+        for coro in asyncio.as_completed(tasks):
+            response, refer_1, refer_2 = await coro
             pbar.update(1)
+            if response is None: continue
+            for offs in response.offsprings:
+                offsprings.append(Program(
+                    id=f"cross_{len(offsprings)+1}",
+                    code=offs,
+                    ext=buggy.ext,
+                    meta={"parent1": refer_1.id, "parent2": refer_2.id}
+                ))
         pbar.close()
         return Programs(offsprings)
     
     # def run(self, programs:Programs) -> Programs:
     #     return asyncio.run(self.__run_async(programs))
     
-    def run(self, programs:list) -> Programs:
+    def run(self, buggy:Program, programs:Programs) -> Programs:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
@@ -87,4 +118,4 @@ class Crossover:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        return loop.run_until_complete(self.__run_async(programs))
+        return loop.run_until_complete(self.__run_async(buggy, programs))

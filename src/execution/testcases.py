@@ -39,6 +39,11 @@ class TestCases:
             prints += self.__print(tc) + '\n\n'
         return prints.strip()
     
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return TestCases(self.testcases[idx])
+        return self.testcases[idx]
+    
     def __print(self, tc:TestCase) -> str:
         prints = f'[Test Case Input {tc.id}]\n{tc.input}\n'
         prints += f'[Test Case Output {tc.id}]\n{tc.output}\n'

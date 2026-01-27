@@ -9,6 +9,7 @@ class Program:
     ext:str = field(metadata={"desc":"File extension indicating the programming language"})
     method:str = field(default=None, metadata={"desc":"Method Name (for Java/C# programs)"})
     results:Results = field(default=None, metadata={"desc":"Run Results after execution"})
+    meta:dict = field(default_factory=dict, metadata={"desc":"Additional metadata"})
     
     def __hash__(self):
         return hash((self.code, self.ext))
@@ -43,10 +44,15 @@ class Programs:
             prints += self.__print(prog) + '\n\n'
         return prints.strip()
     
+    def __getitem__(self, idx) -> Program | list[Program]:
+        if isinstance(idx, slice):
+            return Programs(self.programs[idx])
+        return self.programs[idx]
+    
     def __print(self, prog:Program) -> str:
         return f'```{prog.ext}\n{prog.code}\n```'
 
-    def get_prog_id_list(self) -> list:
+    def get_prog_id_list(self) -> list[str]:
         return [prog.id for prog in self.programs]
     
     def get_prog_by_id(self, id:int) -> Program:

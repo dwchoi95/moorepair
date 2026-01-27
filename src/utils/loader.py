@@ -1,9 +1,9 @@
 import json
 
 from .sampling import Sampling
-from ..execution import Programs, Program
+from ..execution import Programs, Program, TestCases
 
-class Setup:
+class Loader:
     def __init__(self, sampling:bool=False, initialization:bool=False):
         self.sampling = sampling
         self.initialization = initialization
@@ -40,5 +40,5 @@ class Setup:
             'output': t['output'],
             } for t in testcases]
         
-        return problemId, description, Programs(buggys), Programs(references), testcases
+        return problemId, description, Programs(buggys), Programs(references), TestCases(testcases)
     
