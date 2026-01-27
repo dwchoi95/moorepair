@@ -90,7 +90,7 @@ class Crossover:
                  for i in range(0, len(pairs)-1, 2)]
         
         offsprings = [] if len(pairs) % 2 == 0 else [pairs[-1]]
-        pbar = tqdm_async(total=len(pairs), desc='Crossover', leave=False, position=2)
+        pbar = tqdm_async(total=len(tasks), desc='Crossover', leave=False, position=2)
         for coro in asyncio.as_completed(tasks):
             response, refer_1, refer_2 = await coro
             pbar.update(1)
