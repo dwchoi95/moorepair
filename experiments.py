@@ -22,7 +22,7 @@ class Experiments:
         selection:str="nsga3", threshold:float=0.5,
         llm:str="codellama:7b", temperature:float=0.8, timelimit:int=1,
         objectives:list=Fitness.OBJECTIVES, trials:int=10,
-        sampling:bool=False, reset:bool=False, multi:bool=False
+        sampling:bool=False, reset:bool=False, multi:bool=False, logs:bool=False
     ):  
         self.loader = Loader(sampling, initialization)
         
@@ -37,7 +37,7 @@ class Experiments:
         self.trials = trials
         self.reset = reset
         self.multi = multi
-        
+        self.logs = logs
         self.obj = "".join(objectives)
     
     def ratio(self, numerator: float, denominator: float) -> float:
@@ -89,10 +89,7 @@ class Experiments:
                         'similarity': 0,
                         'runtime': 0,
                         'memory': 0,
-                        'num_solutions': 0
                     }
-                
-                generation_stats[gen]['num_solutions'] += len(solutions)
             
                 # Selection of best solution for this generation
                 scoring = {}
@@ -273,7 +270,7 @@ class Experiments:
                buggys:Programs, references:Programs, testcases:TestCases):
         # Generate Feedback
         Tester.init_globals(testcases, self.timelimit)
-        ga = GA(buggys, references, description, self.fitness)
+        ga = GA(buggys, references, description, self.fitness, self.logs)
         # Run MooRepair
         results = ga.run(self.generations, self.pop_size, 
                             self.selection, self.threshold)
