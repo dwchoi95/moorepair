@@ -2,7 +2,7 @@ defaults:
   provider: "ollama"
   name: "codellama:7b"
   tokenizer: "codellama/CodeLlama-7b-hf"
-  context_window: 16000
+  context_window: 4096
 
 providers:
   openai:
@@ -12,5 +12,5 @@ providers:
 
   ollama:
     codellama:7b:
-      context_window: 16000
+      context_window: 4096
       tokenizer: "codellama/CodeLlama-7b-hf"

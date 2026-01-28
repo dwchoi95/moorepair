@@ -13,6 +13,12 @@ class TestCase:
         if not isinstance(other, TestCase):
             return False
         return self.id == other.id and self.input == other.input and self.output == other.output
+    
+    def __str__(self):
+        prints = f'### Test Case ID: {self.id}\n'
+        prints += f'[Input]\n```\n{self.input}\n```\n'
+        prints += f'[Output]\n```\n{self.output}\n```\n'
+        return prints
 
 class TestCases:
     def __init__(self, testcases:list):
@@ -36,19 +42,13 @@ class TestCases:
     def __str__(self):
         prints = ''
         for tc in self.testcases:
-            prints += self.__print(tc) + '\n\n'
+            prints += str(tc) + '\n'
         return prints.strip()
     
     def __getitem__(self, idx):
         if isinstance(idx, slice):
             return TestCases(self.testcases[idx])
         return self.testcases[idx]
-    
-    def __print(self, tc:TestCase) -> str:
-        prints = f'### Test Case ID: {tc.id}\n'
-        prints += f'[Input]\n```\n{tc.input}\n```\n'
-        prints += f'[Output]\n```\n{tc.output}\n```\n'
-        return prints
     
     def get_tc_id_list(self) -> list:
         return [tc.id for tc in self.testcases]

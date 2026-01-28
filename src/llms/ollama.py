@@ -6,7 +6,7 @@ class Ollama:
     def __init__(self, 
                  model:str="codellama:7b", 
                  temperature:float=0.0,
-                 token_limit:int=16000):
+                 token_limit:int=4096):
         from dotenv import load_dotenv
         import os
         load_dotenv()
@@ -18,7 +18,7 @@ class Ollama:
         self.token_limit = token_limit
         
 
-    async def run(self, system:str, user:str, format:BaseModel) -> str| bool:
+    async def run(self, system:str, user:str, format:BaseModel) -> BaseModel| None:
         try:
             response = await self.client.chat(
                 model=self.model,

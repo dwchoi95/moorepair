@@ -1,9 +1,11 @@
+import re
 import asyncio
 from tqdm.asyncio import tqdm as tqdm_async
 from pydantic import BaseModel
 
 from .fitness import Fitness
 from ..execution import Tester, Program, Programs
+from ..llms import Tokenizer, Spec
 from ..utils import Randoms
 
 
@@ -12,15 +14,15 @@ class OutFormat(BaseModel):
 
 SYSTEM_PROMPT = '''# Role
 
-You are an expert {language} programming tutor who helps to fix buggy program.
+You are an expert programming tutor in {language} who helps to fix buggy program.
 
 # Task
 
-You will be given a 'Problem Description', a set of 'Test Cases', a 'Buggy Program', a 'Reference Program' and their test results as Inputs.
-Generate the 'Fixed Program' by repairing the 'Buggy Program' according to the following priority guidelines:
+As Inputs, you will receive a "Problem Description", a set of "Test Cases", and a "Buggy Program", a "Reference Program", their test results.
+Generate the "Fixed Program" by repairing the "Buggy Program" according to the following priority guidelines:
 {guidelines}
 
-Outputs should be a 'Fixed Program' as str.
+The Output should be a "Fixed Program" as string.
 '''
 
 USER_PROMPT = """# Inputs
@@ -40,6 +42,8 @@ USER_PROMPT = """# Inputs
 {reference_program}
 ### Reference Test Results
 {reference_results}
+
+
 """
 
 
@@ -67,14 +71,19 @@ class Variation:
                 key=lambda obj: rankings[obj].index(refer)
             )
         return references
-                
     
     def make_prompt(self, buggy:Program, refer:Program) -> tuple[str, str]:
         priorities = refer.meta.get('priorities')
         guidelines = ''
         for i, obj in enumerate(priorities, 1):
             guidelines += f"  {i}. {self.fitness.guidelines[obj]}\n"
-            
+        
+        # System Prompt
+        system = SYSTEM_PROMPT.format(
+            language=buggy.ext.capitalize(),
+            guidelines=guidelines
+        )
+        
         b_passed, b_failed = Tester.tests_split(buggy.results)
         r_passed, r_failed = Tester.tests_split(refer.results)
         
@@ -83,21 +92,60 @@ class Variation:
         reference_results = f"Passed Test Cases IDs: {sorted([tc.id for tc in r_passed])}  \n"
         reference_results += f"Failed Test Cases IDs: {sorted([tc.id for tc in r_failed])}\n"
         
-        # System Prompt
-        system = SYSTEM_PROMPT.format(
-            language=buggy.ext,
-            guidelines=guidelines
-        )
-        
         # User Prompt
         user = USER_PROMPT.format(
             description=self.description,
-            test_cases=str(Tester.testcases),
+            test_cases="",
             buggy_program=f"```{buggy.ext}\n{buggy.code}\n```",
             buggy_results=buggy_results,
             reference_program=f"```{refer.ext}\n{refer.code}\n```",
             reference_results=reference_results,
         )
+        
+        token_limit = Spec.model.token_limit
+        base_tokens = Tokenizer.length(system + user)
+        if base_tokens > token_limit:
+            raise ValueError("The prompt exceeds the token limit.")
+        
+        pass2pass = b_passed.intersection(r_passed)
+        fail2pass = b_failed.intersection(r_passed)
+        union = pass2pass.union(fail2pass)
+        union_list = list(union)
+        Randoms.shuffle(union_list)
+        
+        testcases = []
+        b_pass_filter, b_fail_filter = set(), set()
+        r_pass_filter, r_fail_filter = set(), set()
+        for tc in union_list:
+            test_case = str(tc)
+            testcases.append(test_case)
+            tokens = Tokenizer.length("\n".join(testcases))
+            if base_tokens + tokens > token_limit:
+                break
+            if tc in b_passed:
+                b_pass_filter.add(tc)
+            if tc in b_failed:
+                b_fail_filter.add(tc)
+            if tc in r_passed:
+                r_pass_filter.add(tc)
+            if tc in r_failed:
+                r_fail_filter.add(tc)
+        
+        buggy_results = f"Passed Test Cases IDs: {sorted([tc.id for tc in b_pass_filter])}  \n"
+        buggy_results += f"Failed Test Cases IDs: {sorted([tc.id for tc in b_fail_filter])}\n"
+        reference_results = f"Passed Test Cases IDs: {sorted([tc.id for tc in r_pass_filter])}  \n"
+        reference_results += f"Failed Test Cases IDs: {sorted([tc.id for tc in r_fail_filter])}\n"
+        
+        user = USER_PROMPT.format(
+            description=self.description,
+            test_cases="\n".join(testcases),
+            buggy_program=f"```{buggy.ext}\n{buggy.code}\n```",
+            buggy_results=buggy_results,
+            reference_program=f"```{refer.ext}\n{refer.code}\n```",
+            reference_results=reference_results,
+        )
+        
+        # Debugging Logs
         # with open('logs/system.md', 'w') as f:
         #     f.write(system)
         # with open('logs/user.md', 'w') as f:
@@ -108,6 +156,15 @@ class Variation:
         from ..llms import Spec
         a_async = await Spec.model.run(*self.make_prompt(buggy, refer))
         return a_async
+    
+    def _post_process(self, response:OutFormat) -> str| None:
+        if response is None:
+            return None
+        fixed_program = response.fixed_program
+        if fixed_program.startswith("```") and fixed_program.endswith("```"):
+            m = re.search(r"```(?:[a-zA-Z0-9_+-]+)?\n(.*?)```", fixed_program, flags=re.DOTALL)
+            return m.group(1).strip() if m else None
+        return fixed_program.strip()
     
     async def __run_async(self, buggy:Program, references:Programs) -> Programs:
         references = self.prioritization(buggy, references)
@@ -120,8 +177,8 @@ class Variation:
             pbar.update(1)
             if response is None: continue
             fixed_programs.append(Program(
-                id=f"pop_{len(fixed_programs)+1}",
-                code=response.fixed_program,
+                id=f"child_{len(fixed_programs)+1}",
+                code=self._post_process(response),
                 ext=buggy.ext
             ))
         pbar.close()

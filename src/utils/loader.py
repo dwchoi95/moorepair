@@ -8,7 +8,7 @@ class Loader:
         self.sampling = sampling
         self.initialization = initialization
     
-    def run(self, problem:str) -> tuple:
+    def run(self, problem:str) -> tuple[str, str, Programs, Programs, TestCases]:
         dataset = json.loads(open(problem, 'r').read())
         assignment = dataset['assignment']
         problemId = assignment['id']

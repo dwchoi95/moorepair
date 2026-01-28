@@ -13,3 +13,9 @@ class Tokenizer:
         tokenizer = Spec.tokenizer
         input_ids = tokenizer.encode(text)
         return input_ids
+    
+    @staticmethod
+    def length(text:str) -> int:
+        tokenizer = Spec.tokenizer
+        input_ids = tokenizer.encode(text)
+        return len(input_ids)
