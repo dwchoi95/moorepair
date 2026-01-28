@@ -7,9 +7,6 @@ from pathlib import Path
 from dataclasses import dataclass
 from transformers import AutoTokenizer
 
-from .ollama import Ollama
-from .openai import OpenAI
-
 
 @dataclass(frozen=True)
 class Spec:
@@ -21,6 +18,9 @@ class Spec:
     
     @classmethod
     def set(cls, name:str=None, temperature:float=None):
+        from .ollama import Ollama
+        from .openai import OpenAI
+
         cls.name = name
         cls.temperature = temperature
         

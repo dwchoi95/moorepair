@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from functools import cache
 from decimal import Decimal, InvalidOperation
+from multiprocessing import Process, Queue
 
 from .program import Program
 from .testcases import TestCases, TestCase
@@ -47,7 +48,57 @@ class Tester:
         return all(tr.result.status == "passed" for tr in results)
 
     @classmethod
-    def _run(cls, cmd:list[str], *, cwd:str, stdin:str="") -> Result:
+    def _run_compile(cls, cmd:list[str], *, cwd:str) -> Result:
+        """Run compilation command and return the result."""
+        status = stdout = stderr = ""
+        returncode = -1
+        exec_time = 0
+        mem_usage = 0
+        
+        try:
+            p = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                text=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            start = time.perf_counter()
+            
+            try:
+                stdout, stderr = p.communicate(timeout=cls.timelimit)
+                exec_time = time.perf_counter() - start
+                returncode = p.returncode
+                status = "ok"
+            
+            except subprocess.TimeoutExpired:
+                p.kill()
+                stdout, stderr = p.communicate()
+                exec_time = cls.timelimit
+                status = "timeout"
+            
+        except Exception as e:
+            status = "error"
+            stderr = str(e)
+        
+        return Result(
+            status=status,
+            stdout=stdout,
+            stderr=stderr,
+            returncode=returncode,
+            exec_time=exec_time,
+            mem_usage=mem_usage
+        )
+
+    @classmethod
+    def _run_test(cls, cmd:list[str], *, cwd:str, tc:TestCase, queue:Queue, compile_result:Result=None) -> None:
+        """Execute a test case and put the result in the queue."""
+        # If compilation failed, reuse the compilation error for all test cases
+        if compile_result is not None and compile_result.returncode != 0:
+            queue.put(TestcaseResult(testcase=tc, result=compile_result))
+            return
+        
         status = stdout = stderr = ""
         returncode = -1
         exec_time = cls.timelimit
@@ -84,7 +135,7 @@ class Tester:
             t.start()
             
             try:
-                stdout, stderr = p.communicate(input=stdin, timeout=cls.timelimit)
+                stdout, stderr = p.communicate(input=tc.input, timeout=cls.timelimit)
                 exec_time = time.perf_counter() - start
                 returncode = p.returncode
                 status = "ok"
@@ -102,14 +153,21 @@ class Tester:
             status = "error"
             stderr = str(e)
         
-        return Result(
-                status=status,
-                stdout=stdout,
-                stderr=stderr,
-                returncode=returncode,
-                exec_time=exec_time,
-                mem_usage=mem_usage
-            )
+        result = Result(
+            status=status,
+            stdout=stdout,
+            stderr=stderr,
+            returncode=returncode,
+            exec_time=exec_time,
+            mem_usage=mem_usage
+        )
+        
+        # Check if test passed
+        passed = cls.__is_equal(tc.output, result.stdout) and result.returncode == 0
+        result.status = "passed" if passed else "failed"
+        
+        # Put TestcaseResult in queue
+        queue.put(TestcaseResult(testcase=tc, result=result))
 
     @classmethod
     def __is_equal(cls, expect:str, stdout:str) -> bool:
@@ -164,19 +222,32 @@ class Tester:
         
     
     @classmethod
-    def _validation(cls, res:Result, exe:list, td:str) -> Results:
-        # Validation
-        ts = []
+    def _validation(cls, compile_result:Result, exe:list, td:str) -> Results:
+        """Validate program by running all test cases in parallel."""
+        queue = Queue()
+        processes = []
+        
+        # Start a process for each test case
         for tc in cls.testcases:
-            # Compilation Error
-            if res.returncode != 0:
-                ts.append(TestcaseResult(testcase=tc, result=res))
-                continue
-            res = cls._run(exe, cwd=td, stdin=tc.input)
-            passed = cls.__is_equal(tc.output, res.stdout) and res.returncode == 0
-            res.status = "passed" if passed else "failed"
-            ts.append(TestcaseResult(testcase=tc, result=res))
-        return Results(ts)
+            p = Process(target=cls._run_test, args=(exe,), 
+                       kwargs={'cwd': td, 'tc': tc, 'queue': queue, 
+                              'compile_result': compile_result})
+            p.start()
+            processes.append(p)
+        
+        # Collect results from queue
+        results = []
+        for _ in range(len(cls.testcases)):
+            results.append(queue.get())
+        
+        # Wait for all processes to finish
+        for p in processes:
+            p.join()
+        
+        # Sort results by test case id to maintain order
+        results.sort(key=lambda tr: tr.testcase.id)
+        
+        return Results(results)
 
     @classmethod
     def run_cpp(cls, program:Program):
@@ -186,7 +257,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = cls._run(["g++", "-std=c++17", "-O2", "-pipe", src, "-o", exe], cwd=td)
+            res = cls._run_compile(["g++", "-std=c++17", "-O2", "-pipe", src, "-o", exe], cwd=td)
             return cls._validation(res, [exe], td)
 
     @classmethod
@@ -197,7 +268,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = cls._run(["gcc", "-O2", "-pipe", src, "-o", exe], cwd=td)
+            res = cls._run_compile(["gcc", "-O2", "-pipe", src, "-o", exe], cwd=td)
             return cls._validation(res, [exe], td)
             
     @classmethod
@@ -208,7 +279,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = cls._run(["javac", f"{program.mn}.java"], cwd=td)
+            res = cls._run_compile(["javac", f"{program.mn}.java"], cwd=td)
             return cls._validation(res, [exe], td)
     
     @classmethod
@@ -261,7 +332,7 @@ class Tester:
                 f.write(program.code)
 
             exe_path = os.path.join(td, "Main.exe")
-            res = cls._run(["mcs", "-optimize+", "-out:Main.exe", f"{program.mn}.cs"], cwd=td)
+            res = cls._run_compile(["mcs", "-optimize+", "-out:Main.exe", f"{program.mn}.cs"], cwd=td)
             exe = ["mono", exe_path]
             return cls._validation(res, [exe], td)
         
@@ -273,7 +344,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = cls._run(["go", "build", "-o", exe_path, "main.go"], cwd=td)
+            res = cls._run_compile(["go", "build", "-o", exe_path, "main.go"], cwd=td)
             exe = [exe_path]
             return cls._validation(res, [exe], td)
         
@@ -285,7 +356,7 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = cls._run(["rustc", "-O", "main.rs", "-o", exe_path], cwd=td)
+            res = cls._run_compile(["rustc", "-O", "main.rs", "-o", exe_path], cwd=td)
             exe = [exe_path]
             return cls._validation(res, [exe], td)
     
@@ -317,5 +388,6 @@ class Tester:
     
     @classmethod
     def run(cls, program:Program) -> Results:
-        program.results = cls.__run(program)
+        if program.results is None:
+            program.results = cls.__run(program)
         return program.results

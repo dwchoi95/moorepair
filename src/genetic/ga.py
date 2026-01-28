@@ -38,6 +38,8 @@ class GeneticAlgorithm:
         result = {}
         early_stop = False
         population = self._init_population(buggy, pop_size)
+        population_codes = {pop.code for pop in population}
+        
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
             solutions = Programs()
             result.setdefault(gen, solutions)
@@ -50,10 +52,10 @@ class GeneticAlgorithm:
                 
             # Update Population
             for child in tqdm(childs, desc="Evaluation", position=2, leave=False):
-                # Duplicate Check
-                if all(child.code == pop.code for pop in population):
+                if child.code not in population_codes:
                     child.id = f"pop_{len(population)+1}"
                     population.append(child)
+                    population_codes.add(child.code)
                 
                 # Validation
                 results = Tester.run(child)

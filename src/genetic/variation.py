@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 from .fitness import Fitness
 from ..execution import Tester, Program, Programs
-from ..llms import Tokenizer, Spec
 from ..utils import Randoms
 
 
@@ -73,6 +72,8 @@ class Variation:
         return references
     
     def make_prompt(self, buggy:Program, refer:Program) -> tuple[str, str]:
+        from ..llms import Tokenizer, Spec
+        
         priorities = refer.meta.get('priorities')
         guidelines = ''
         for i, obj in enumerate(priorities, 1):
@@ -157,14 +158,11 @@ class Variation:
         a_async = await Spec.model.run(*self.make_prompt(buggy, refer))
         return a_async
     
-    def _post_process(self, response:OutFormat) -> str| None:
-        if response is None:
-            return None
-        fixed_program = response.fixed_program
-        if fixed_program.startswith("```") and fixed_program.endswith("```"):
-            m = re.search(r"```(?:[a-zA-Z0-9_+-]+)?\n(.*?)```", fixed_program, flags=re.DOTALL)
-            return m.group(1).strip() if m else None
-        return fixed_program.strip()
+    def _post_process(self, code:str) -> str:
+        if code.startswith("```") and code.endswith("```"):
+            m = re.search(r"```(?:[a-zA-Z0-9_+-]+)?[\r\n]+(.*?)```", code, flags=re.DOTALL)
+            return m.group(1).strip() if m else code.strip()
+        return code.strip()
     
     async def __run_async(self, buggy:Program, references:Programs) -> Programs:
         references = self.prioritization(buggy, references)
@@ -178,7 +176,7 @@ class Variation:
             if response is None: continue
             fixed_programs.append(Program(
                 id=f"child_{len(fixed_programs)+1}",
-                code=self._post_process(response),
+                code=self._post_process(response.fixed_program),
                 ext=buggy.ext
             ))
         pbar.close()
