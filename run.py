@@ -36,8 +36,6 @@ if __name__ == "__main__":
                         help="Run with multiprocessing")
     parser.add_argument('-o', '--objectives', nargs='+', default=" ".join(Fitness.OBJECTIVES),
                         help=f"Select objectives to considered, e.g., '{' '.join(Fitness.OBJECTIVES)}'")
-    parser.add_argument('--logs', action='store_true', default=False,
-                        help="Save GA run logs to files")
     args = parser.parse_args()
 
 
@@ -55,7 +53,6 @@ if __name__ == "__main__":
     reset = args.reset
     multi = args.multiprocess
     objectives = args.objectives
-    logs = args.logs
     if isinstance(objectives, str):
         objectives = objectives.split(' ')
     
@@ -82,8 +79,6 @@ if __name__ == "__main__":
     assert isinstance(objectives, list) and \
         all(isinstance(obj, str) for obj in objectives), \
         "Objectives must be a list of strings"
-    assert isinstance(logs, bool), \
-        "Logs must be a boolean value"
     
     # dataset 디렉토리 부터 하위의 모든 .json 파일들 수집해서 prblems 리스트에 저장
     problems = []
@@ -98,7 +93,7 @@ if __name__ == "__main__":
         selection, threshold, 
         llm, temperature, timelimit,
         objectives, executions, 
-        sampling, reset, multi, logs
+        sampling, reset, multi
     )
     ex.run(problems)
     

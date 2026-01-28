@@ -22,7 +22,7 @@ class Experiments:
         selection:str="nsga3", threshold:float=0.5,
         llm:str="codellama:7b", temperature:float=0.8, timelimit:int=1,
         objectives:list=Fitness.OBJECTIVES, trials:int=10,
-        sampling:bool=False, reset:bool=False, multi:bool=False, logs:bool=False
+        sampling:bool=False, reset:bool=False, multi:bool=False,
     ):  
         self.loader = Loader(sampling, initialization)
         
@@ -37,7 +37,6 @@ class Experiments:
         self.trials = trials
         self.reset = reset
         self.multi = multi
-        self.logs = logs
         self.obj = "".join(objectives)
     
     def ratio(self, numerator: float, denominator: float) -> float:
@@ -269,8 +268,9 @@ class Experiments:
     def __core(self, trial:int, problemId:int, description:str,
                buggys:Programs, references:Programs, testcases:TestCases):
         # Generate Feedback
+        log_path = os.path.join('logs', str(problemId), self.selection, f'trial_{trial}.log')
         Tester.init_globals(testcases, self.timelimit)
-        ga = GA(buggys, references, description, self.fitness, self.logs)
+        ga = GA(buggys, references, description, self.fitness, log_path)
         # Run MooRepair
         results = ga.run(self.generations, self.pop_size, 
                             self.selection, self.threshold)

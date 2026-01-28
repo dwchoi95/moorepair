@@ -15,7 +15,7 @@ class GeneticAlgorithm:
         references:Programs,
         description:str,
         fitness:Fitness=Fitness(),
-        logs:bool=False,
+        log_path:str="logs/temp.log",
     ):
         self.buggys = buggys
         self.references = references
@@ -24,26 +24,18 @@ class GeneticAlgorithm:
         self.select = Selection(fitness)
         self.variation = Variation(fitness, description)
         
-        self.logs = logs
-        self.logger = None
+        log_path = Path(log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Setup logger
-        if self.logs:
-            log_dir = Path("logs")
-            log_dir.mkdir(exist_ok=True)
-            log_file = log_dir / f"ga_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-            
-            self.logger = logging.getLogger(f"GA_{id(self)}")
-            self.logger.setLevel(logging.INFO)
-            
-            # File handler with immediate flush
-            file_handler = logging.FileHandler(log_file, mode='a')
-            file_handler.setLevel(logging.INFO)
-            formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-            file_handler.setFormatter(formatter)
-            
-            self.logger.addHandler(file_handler)
-            self.logger.info(f"GA run started - Log file: {log_file}")
+        self.logger = logging.getLogger("GA")
+        self.logger.setLevel(logging.INFO)
+        fh = logging.FileHandler(log_path, mode='w', encoding='utf-8')
+        fh.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+        self.logger.propagate = False
+        
     
     def _init_population(self, buggy:Program, pop_size:int) -> Programs:
         population = Programs([ref for ref in self.references if ref.ext == buggy.ext])
@@ -92,39 +84,37 @@ class GeneticAlgorithm:
                 
                 # Add to Solutions
                 solutions.append(child)
+
                 
-                # Early Stop Criterion Check
-                if early_stop: continue
-                if len(solutions) >= threshold:
-                    early_stop = True
-            
-            if self.logger:
-                scoring = {}
-                for patch in solutions:
-                    scores = self.fitness.run(buggy, patch)
-                    scoring[patch.id] = scores
-                if not scoring: continue
-                sol_id = self.select.hype(scoring)
-                patch = solutions.get_prog_by_id(sol_id)
-                refer = self.references.get_prog_by_id(buggy.id)
-                ## similarity
-                ted = TED(buggy.ext)
-                refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
-                patch_sim = ted.compute_levenshtein_led(buggy.code, patch.code)
-                sim = ETC.divide(
-                    (refer_sim - patch_sim), (refer_sim + patch_sim))
-                ## runtime
-                refer_time = refer.results.exec_time()
-                patch_time = patch.results.exec_time()
-                eff = ETC.divide(
-                    (refer_time - patch_time), (refer_time + patch_time))
-                ## memory
-                refer_mem = refer.results.mem_usage()
-                patch_mem = patch.results.mem_usage()
-                mem = ETC.divide(
-                    (refer_mem - patch_mem), (refer_mem + patch_mem))
-                
-                self.logger.info(f"Gen {gen} | Solutions: {len(solutions)} | Sim: {sim:.4f} | Eff: {eff:.4f} | Mem: {mem:.4f}")
+            # Early Stop Criterion Check
+            scoring = {}
+            for patch in solutions:
+                scores = self.fitness.run(buggy, patch)
+                scoring[patch.id] = scores
+            if not scoring: continue
+            sol_id = self.select.hype(scoring)
+            patch = solutions.get_prog_by_id(sol_id)
+            refer = self.references.get_prog_by_id(buggy.id)
+            ## similarity
+            ted = TED(buggy.ext)
+            refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
+            patch_sim = ted.compute_levenshtein_led(buggy.code, patch.code)
+            sim = ETC.divide(
+                (refer_sim - patch_sim), (refer_sim + patch_sim))
+            ## runtime
+            refer_time = refer.results.exec_time()
+            patch_time = patch.results.exec_time()
+            eff = ETC.divide(
+                (refer_time - patch_time), (refer_time + patch_time))
+            ## memory
+            refer_mem = refer.results.mem_usage()
+            patch_mem = patch.results.mem_usage()
+            mem = ETC.divide(
+                (refer_mem - patch_mem), (refer_mem + patch_mem))
+            if sim >= 0 and eff >= 0 and mem >= 0:
+                early_stop = True
+            self.logger.info(f"Buggy: {buggy.id} | Gen {gen} | Solutions: {len(solutions)} | Sim: {sim:.4f} | Eff: {eff:.4f} | Mem: {mem:.4f}")
+            self.logger.info(f"Best Patch:\n{patch.code}\n")
                 
         return result
         
