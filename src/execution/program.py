@@ -66,3 +66,6 @@ class Programs:
     
     def append(self, program:Program):
         self.programs.append(program)
+    
+    def copy(self) -> 'Programs':
+        return Programs(self.programs.copy())

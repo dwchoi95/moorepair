@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 from pymoo.optimize import minimize
 from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.core.problem import Problem
@@ -141,9 +142,18 @@ class Selection:
             selected.append(key)
         return selected[:pop_size]
     
-    def hype(self, scores:dict, pop_size:int=1) -> list | str:
+    def hype(self, scoring:dict, pop_size:int=1) -> list | str:
+        solutions = list(scoring.keys())
+        objectives = list(next(iter(scoring.values())).keys())
+        X = np.array([[scoring[s][o] for o in objectives] for s in solutions], dtype=float)
+        scaler = MinMaxScaler(feature_range=(0.0, 1.0))
+        Xn = scaler.fit_transform(X)
+        normalized = {
+            s: {o: float(Xn[i, j]) for j, o in enumerate(objectives)}
+            for i, s in enumerate(solutions)
+        }
         hv_values = {key: self.fitness.hypervolume(value)
-                     for key, value in scores.items()}
+                     for key, value in normalized.items()}
         sorted_keys = sorted(hv_values, key=hv_values.get, reverse=True)
         return sorted_keys[:pop_size] if pop_size > 1 else sorted_keys[0]
     

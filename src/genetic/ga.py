@@ -37,12 +37,14 @@ class GeneticAlgorithm:
                 pop_size:int, selection:str, threshold:int) -> dict:
         result = {}
         early_stop = False
+        solutions = Programs()
         population = self._init_population(buggy, pop_size)
         population_codes = {pop.code for pop in population}
         
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
-            solutions = Programs()
-            result.setdefault(gen, solutions)
+            if early_stop: break
+            
+            result.setdefault(gen, solutions.copy())
             
             # Selection
             parents = self.select.run(buggy, population, pop_size, selection)
@@ -65,11 +67,10 @@ class GeneticAlgorithm:
                 solutions.append(child)
                 
                 # Early Stop Criterion Check
+                if early_stop: continue
                 if len(solutions) >= threshold:
                     early_stop = True
-                if early_stop: continue
                 
-            if early_stop: break
         return result
         
     def run(self, generations:int=3, pop_size:int=10, 

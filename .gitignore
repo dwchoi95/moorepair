@@ -149,3 +149,4 @@ data/
 *.ipynb
 TODO.md
 results/
+logs/

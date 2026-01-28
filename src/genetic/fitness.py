@@ -127,14 +127,12 @@ class Fitness:
     
     def hypervolume(self, scores:dict[str, float] | list[float]) -> float:
         if isinstance(scores, dict):
-            F_max = np.array([[s for s in scores.values()]], dtype=float)
+            objectives = list(scores.keys())
+            x = np.array([scores[o] for o in objectives], dtype=float)
+            ref = np.ones(len(objectives), dtype=float)
         elif isinstance(scores, list):
-            F_max = np.array([[s for s in scores]], dtype=float)
-        else:
-            raise ValueError("Scores must be a dict or a list")
-        F_min = -F_max
-        # set a reference point slightly worse than the worst point(0.0)
-        ref = np.full(F_min.shape[1], 0.1)
+            x = np.array(scores, dtype=float)
+            ref = np.ones(len(scores), dtype=float)
         hv = HV(ref_point=ref)
-        return hv.do(F_min)
+        return float(hv(x.reshape(1, -1)))
     

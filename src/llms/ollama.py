@@ -5,9 +5,9 @@ from pydantic import BaseModel
 class Ollama:
     def __init__(self, 
                  model:str="codellama:7b", 
-                 temperature:float=0.0,
+                 temperature:float=0.8,
                  token_limit:int=4096,
-                 timeout:int=10):
+                 timeout:int=30):
         from dotenv import load_dotenv
         import os
         load_dotenv()

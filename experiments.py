@@ -1,6 +1,6 @@
 import os
 import csv
-import json
+import shutil
 import pickle
 import time
 import math
@@ -89,7 +89,6 @@ class Experiments:
                         'similarity': 0,
                         'runtime': 0,
                         'memory': 0,
-                        'count': 0,
                         'num_solutions': 0
                     }
                 
@@ -125,8 +124,6 @@ class Experiments:
                 generation_stats[gen]['memory'] += self.ratio(
                     (refer_mem - patch_mem), (refer_mem + patch_mem))
                 
-                generation_stats[gen]['count'] += 1
-                
                 # 마지막 generation의 best solution만 final에 저장
                 if gen == max(result.keys()):
                     final.append((buggy, refer, patch))
@@ -136,32 +133,18 @@ class Experiments:
         total_refs = len(references)
         for gen in sorted(generation_stats.keys()):
             stats = generation_stats[gen]
-            count = stats['count']
-            
-            if count > 0:
-                table.add_row([
-                    trial,
-                    gen,
-                    total_refs,
-                    total_bugs,
-                    count,
-                    f"{(stats['accuracy'] / total_bugs * 100):.2f}%",
-                    f"{(stats['similarity'] / count * 100):.2f}%",
-                    f"{(stats['runtime'] / count * 100):.2f}%",
-                    f"{(stats['memory'] / count * 100):.2f}%"
-                ])
-            else:
-                table.add_row([
-                    trial,
-                    gen,
-                    total_refs,
-                    total_bugs,
-                    0,
-                    "0.00%",
-                    "0.00%",
-                    "0.00%",
-                    "0.00%"
-                ])
+            fixed = stats['accuracy']
+            table.add_row([
+                trial,
+                gen,
+                total_refs,
+                total_bugs,
+                fixed,
+                f"{ETC.divide(fixed, total_bugs) * 100:.2f}%",
+                f"{ETC.divide(stats['similarity'], fixed) * 100:.2f}%",
+                f"{ETC.divide(stats['runtime'], fixed) * 100:.2f}%",
+                f"{ETC.divide(stats['memory'], fixed) * 100:.2f}%"
+            ])
         
         print(table)
         summary_path = os.path.join(results_dir, 'summary.csv')
@@ -273,11 +256,17 @@ class Experiments:
         ]
 
         file_exists = os.path.exists(overall_path) and os.path.getsize(overall_path) > 0
-        with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            if not file_exists:
+        if self.reset:
+            with open(overall_path, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
                 writer.writerow(headers)
-            writer.writerow(row)
+                writer.writerow(row)
+        else:
+            with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(headers)
+                writer.writerow(row)
         
 
     def __core(self, trial:int, problemId:int, description:str,
@@ -297,6 +286,10 @@ class Experiments:
         for problem in problems:
             problemId, description, buggys, \
                 references, testcases = self.loader.run(problem)
+            print(f"\n=== {problemId} ===")
+            results_dir = os.path.join('results', str(problemId), self.selection)
+            if os.path.exists(results_dir):
+                shutil.rmtree(results_dir)
             for trial in range(1, self.trials+1):
                 self.__core(
                     trial, problemId, description,

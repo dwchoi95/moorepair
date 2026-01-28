@@ -10,8 +10,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', type=str, required=True,
                         help="The path of dataset")
-    parser.add_argument('-g', '--generations', type=int, default=3,
-                        help="Number of generations, default is 3")
+    parser.add_argument('-g', '--generations', type=int, default=20,
+                        help="Number of generations, default is 20")
     parser.add_argument('-p', '--popsize', type=int, default=10,
                         help="Number of population size, default is 10")
     parser.add_argument('-i', '--initialization', action='store_true', default=False,
