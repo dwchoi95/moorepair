@@ -6,17 +6,18 @@ class Ollama:
     def __init__(self, 
                  model:str="codellama:7b", 
                  temperature:float=0.0,
-                 token_limit:int=4096):
+                 token_limit:int=4096,
+                 timeout:int=10):
         from dotenv import load_dotenv
         import os
         load_dotenv()
         LOCAL_API_URL = os.getenv("LOCAL_API_URL")
         
-        self.client = AsyncClient(host=LOCAL_API_URL)
+        self.client = AsyncClient(host=LOCAL_API_URL, timeout=timeout)
         self.model = model
         self.temperature = temperature
         self.token_limit = token_limit
-        
+        self.timeout = timeout
 
     async def run(self, system:str, user:str, format:BaseModel) -> BaseModel| None:
         try:

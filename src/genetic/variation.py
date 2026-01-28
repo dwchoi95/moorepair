@@ -17,7 +17,7 @@ You are an expert programming tutor in {language} who helps to fix buggy program
 
 # Task
 
-As Inputs, you will receive a "Problem Description", a set of "Test Cases", and a "Buggy Program", a "Reference Program", their test results.
+As Inputs, you will receive a "Buggy Program", a "Reference Program", their test results, and a "Problem Description", a set of "Test Cases".
 Generate the "Fixed Program" by repairing the "Buggy Program" according to the following priority guidelines:
 {guidelines}
 
@@ -25,12 +25,6 @@ The Output should be a "Fixed Program" as string.
 '''
 
 USER_PROMPT = """# Inputs
-
-## Problem Description
-{description}
-
-## Test Cases
-{test_cases}
 
 ## Buggy Program
 {buggy_program}
@@ -42,7 +36,11 @@ USER_PROMPT = """# Inputs
 ### Reference Test Results
 {reference_results}
 
+## Problem Description
+{description}
 
+## Test Cases
+{test_cases}
 """
 
 
@@ -105,8 +103,6 @@ class Variation:
         
         token_limit = Spec.model.token_limit
         base_tokens = Tokenizer.length(system + user)
-        if base_tokens > token_limit:
-            raise ValueError("The prompt exceeds the token limit.")
         
         pass2pass = b_passed.intersection(r_passed)
         fail2pass = b_failed.intersection(r_passed)
@@ -159,10 +155,14 @@ class Variation:
         return a_async
     
     def _post_process(self, code:str) -> str:
-        if code.startswith("```") and code.endswith("```"):
+        code = code.strip()
+        while code.startswith("```") and code.endswith("```"):
             m = re.search(r"```(?:[a-zA-Z0-9_+-]+)?[\r\n]+(.*?)```", code, flags=re.DOTALL)
-            return m.group(1).strip() if m else code.strip()
-        return code.strip()
+            if m:
+                code = m.group(1).strip()
+            else:
+                break
+        return code
     
     async def __run_async(self, buggy:Program, references:Programs) -> Programs:
         references = self.prioritization(buggy, references)
