@@ -60,6 +60,7 @@ class GeneticAlgorithm:
         population = self._init_population(buggy, pop_size)
         population_codes = {pop.code for pop in population}
         
+        self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
             if early_stop: break
             
@@ -113,7 +114,7 @@ class GeneticAlgorithm:
                 (refer_mem - patch_mem), (refer_mem + patch_mem))
             if sim >= 0 and eff >= 0 and mem >= 0:
                 early_stop = True
-            self.logger.info(f"Buggy: {buggy.id} | Gen {gen} | Solutions: {len(solutions)} | Sim: {sim:.4f} | Eff: {eff:.4f} | Mem: {mem:.4f}")
+            self.logger.info(f"Gen {gen} | Solutions: {len(solutions)} | Sim: {sim:.4f} | Eff: {eff:.4f} | Mem: {mem:.4f}")
             self.logger.info(f"Best Patch:\n{patch.code}\n")
                 
         return result
