@@ -60,6 +60,13 @@ class GeneticAlgorithm:
         population = self._init_population(buggy, pop_size)
         population_codes = {pop.code for pop in population}
         
+        refer = self.references.get_prog_by_id(buggy.id)
+        Tester.run(refer)
+        ted = TED(buggy.ext)
+        refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
+        refer_time = refer.results.exec_time()
+        refer_mem = refer.results.mem_usage()
+        
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
             if early_stop: break
@@ -86,36 +93,23 @@ class GeneticAlgorithm:
                 # Add to Solutions
                 solutions.append(child)
 
-                
-            # Early Stop Criterion Check
-            scoring = {}
-            for patch in solutions:
-                scores = self.fitness.run(buggy, patch)
-                scoring[patch.id] = scores
-            if not scoring: continue
-            sol_id = self.select.hype(scoring)
-            patch = solutions.get_prog_by_id(sol_id)
-            refer = self.references.get_prog_by_id(buggy.id)
-            ## similarity
-            ted = TED(buggy.ext)
-            refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
-            patch_sim = ted.compute_levenshtein_led(buggy.code, patch.code)
-            sim = ETC.divide(
-                (refer_sim - patch_sim), (refer_sim + patch_sim))
-            ## runtime
-            refer_time = refer.results.exec_time()
-            patch_time = patch.results.exec_time()
-            eff = ETC.divide(
-                (refer_time - patch_time), (refer_time + patch_time))
-            ## memory
-            refer_mem = refer.results.mem_usage()
-            patch_mem = patch.results.mem_usage()
-            mem = ETC.divide(
-                (refer_mem - patch_mem), (refer_mem + patch_mem))
-            if sim >= 0 and eff >= 0 and mem >= 0:
-                early_stop = True
-            self.logger.info(f"Gen {gen} | Solutions: {len(solutions)} | Sim: {sim:.4f} | Eff: {eff:.4f} | Mem: {mem:.4f}")
-            self.logger.info(f"Best Patch:\n{patch.code}\n")
+                # Early Stop Criterion Check
+                ## similarity
+                patch_sim = ted.compute_levenshtein_led(buggy.code, child.code)
+                sim = ETC.divide(
+                    (refer_sim - patch_sim), (refer_sim + patch_sim))
+                ## execution time
+                patch_time = child.results.exec_time()
+                exec_time = ETC.divide(
+                    (refer_time - patch_time), (refer_time + patch_time))
+                ## memory usage
+                patch_mem = child.results.mem_usage()
+                mem_usage = ETC.divide(
+                    (refer_mem - patch_mem), (refer_mem + patch_mem))
+                if sim >= 0 and exec_time >= 0 and mem_usage >= 0:
+                    early_stop = True
+                self.logger.info(f"GEN {gen} | SOL: {len(solutions)} | SIM: {sim:.2f} | ET: {exec_time:.2f} | MEM: {mem_usage:.2f}")
+                self.logger.info(f"Patch:\n{child.code}\n")
                 
         return result
         
