@@ -14,26 +14,26 @@ class Loader:
         problemId = assignment['id']
         description = assignment['description'].replace('\n', '  \n')
         submissions = dataset['submissions']
-        references, buggys = [], []
+        references, buggys = Programs(), Programs()
         
         for sub in submissions:
             if sub["status"] == "buggy": 
                 buggys.append(Program(
                     id=sub["id"], code=sub["code"], ext=sub["ext"]))
-            else: references.append(
-                Program(
+            else: references.append(Program(
                     id=sub["id"], code=sub["code"], ext=sub["ext"]))
         
         if self.sampling:
-            sampler = Sampling(buggys)
-            buggys = sampler.random()
-            sampler = Sampling(references)
-            references = sampler.random()
+            sampler = Sampling(list(buggys))
+            buggys = Programs(sampler.random())
+            # sampler = Sampling(references)
+            # references = sampler.random()
+            references = Programs([references.get_prog_by_id(buggy.id) for buggy in buggys])
         
         if self.initialization:
-            references = []
+            references = Programs()
         
-        testcases = dataset['test_cases']
+        testcases = TestCases(dataset['test_cases'])
     
-        return problemId, description, Programs(buggys), Programs(references), TestCases(testcases)
+        return problemId, description, buggys, references, testcases
     

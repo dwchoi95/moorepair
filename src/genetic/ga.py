@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 
@@ -31,7 +30,7 @@ class GeneticAlgorithm:
         self.logger.setLevel(logging.INFO)
         fh = logging.FileHandler(log_path, mode='w', encoding='utf-8')
         fh.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter('%(asctime)s - %(message)s')
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
         self.logger.propagate = False
@@ -70,8 +69,8 @@ class GeneticAlgorithm:
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
             if early_stop: break
-            
             result.setdefault(gen, solutions.copy())
+            self.logger.info(f"=== Generation {gen} ===")
             
             # Selection
             parents = self.select.run(buggy, population, pop_size, selection)
@@ -106,10 +105,13 @@ class GeneticAlgorithm:
                 patch_mem = child.results.mem_usage()
                 mem_usage = ETC.divide(
                     (refer_mem - patch_mem), (refer_mem + patch_mem))
+                
+                log = f"Patch {len(solutions)}: SIM: {sim:.2f} | ET: {exec_time:.2f} | MEM: {mem_usage:.2f}"
                 if sim >= 0 and exec_time >= 0 and mem_usage >= 0:
                     early_stop = True
-                self.logger.info(f"GEN {gen} | SOL: {len(solutions)} | SIM: {sim:.2f} | ET: {exec_time:.2f} | MEM: {mem_usage:.2f}")
-                self.logger.info(f"Patch:\n{child.code}\n")
+                    log += f" >>> Early Stopped!"
+                log += f"\n{child.code}\n"
+                self.logger.info(log)
                 
         return result
         
