@@ -87,8 +87,8 @@ class TED:
         Computes the edit distance between two Line(s) using Levenshtein distance
         on the sequence of node types.
         """
-        seq1 = [line for line in code1.splitlines() if line.strip()]
-        seq2 = [line for line in code2.splitlines() if line.strip()]
+        seq1 = ["".join(line.split()) for line in code1.splitlines() if line.strip()]
+        seq2 = ["".join(line.split()) for line in code2.splitlines() if line.strip()]
         seq_set = set(seq1).union(set(seq2))
         char_map = {node: chr(i + 1) for i, node in enumerate(seq_set)}
         str1 = ''.join(char_map[node] for node in seq1)
