@@ -20,8 +20,8 @@ if __name__ == "__main__":
                         help=f"Select method for selection, e.g., {', '.join(SELECTIONS)}")
     parser.add_argument('--threshold', type=int, default=5,
                         help="Set a threshold for early stop of GP, default is 5")
-    parser.add_argument('-l', '--llm', type=str, default='codellama:7b',
-                        help="Select LLM model for generating patches, default is codellama:7b")
+    parser.add_argument('-l', '--llm', type=str, default='codellama/CodeLlama-7b-Instruct-hf',
+                        help="Select LLM model for generating patches, default is codellama/CodeLlama-7b-Instruct-hf")
     parser.add_argument('--temperature', type=float, default=0.8,
                         help="Set temperature for LLM model, default is 0.8")
     parser.add_argument('-t', '--timelimit', type=int, default=1,

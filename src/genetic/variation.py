@@ -70,7 +70,7 @@ class Variation:
         return references
     
     def make_prompt(self, buggy:Program, refer:Program) -> tuple[str, str]:
-        from ..llms import Tokenizer, Spec
+        from ..llms import Tokenizer, Models
         
         priorities = refer.meta.get('priorities')
         guidelines = ''
@@ -101,7 +101,7 @@ class Variation:
             reference_results=reference_results,
         )
         
-        token_limit = Spec.model.token_limit
+        token_limit = Models.token_limit
         base_tokens = Tokenizer.length(system + user)
         
         pass2pass = b_passed.intersection(r_passed)
@@ -150,8 +150,8 @@ class Variation:
         return system, user, OutFormat
     
     async def _task(self, buggy:Program, refer:Program):
-        from ..llms import Spec
-        a_async = await Spec.model.run(*self.make_prompt(buggy, refer))
+        from ..llms import Models
+        a_async = await Models.run(*self.make_prompt(buggy, refer))
         return a_async
     
     def _post_process(self, code:str) -> str:

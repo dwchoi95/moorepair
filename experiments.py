@@ -10,7 +10,7 @@ from prettytable import PrettyTable
 import warnings
 warnings.filterwarnings('ignore')
 
-from src.llms import Spec
+from src.llms import Models, Tokenizer
 from src.genetic import GA, Fitness, Selection
 from src.utils import ETC, TED, Loader
 from src.execution import Tester, Programs, TestCases
@@ -20,7 +20,8 @@ class Experiments:
     def __init__(self,
         generations:int=3, pop_size:int=10, initialization:bool=False,
         selection:str="nsga3", threshold:float=0.5,
-        llm:str="codellama:7b", temperature:float=0.8, timelimit:int=1,
+        llm:str="codellama/CodeLlama-7b-Instruct-hf", 
+        temperature:float=0.8, timelimit:int=1,
         objectives:list=Fitness.OBJECTIVES, trials:int=10,
         sampling:bool=False, reset:bool=False, multi:bool=False,
     ):  
@@ -33,7 +34,8 @@ class Experiments:
         self.timelimit = timelimit
         self.fitness = Fitness(objectives)
         self.select = Selection(self.fitness)
-        Spec.set(llm, temperature)
+        Models.set(model=llm, temperature=temperature)
+        Tokenizer.set(llm)
         self.trials = trials
         self.reset = reset
         self.multi = multi
@@ -165,7 +167,7 @@ class Experiments:
             df = pd.concat([df, new_row], ignore_index=True)
         best_sol_path = os.path.join(results_dir, 'solutions', f'trial_{trial}.csv')
         os.makedirs(os.path.dirname(best_sol_path), exist_ok=True)
-        df.to_csv(best_sol_path, index=False)
+        df.to_csv(best_sol_path, index=False, quoting=csv.QUOTE_ALL)
 
     def __save_experiments(self, problemId: int) -> None:
         # per-problem summary path

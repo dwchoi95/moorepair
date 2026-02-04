@@ -1,4 +1,2 @@
-from .openai import OpenAI
-from .ollama import Ollama
-from .spec import Spec
+from .models import Models
 from .tokenizer import Tokenizer

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from .results import Results
+from ..utils.ted import TED
     
 @dataclass
 class Program:
@@ -12,12 +13,17 @@ class Program:
     meta:dict = field(default_factory=dict, metadata={"desc":"Additional metadata"})
     
     def __hash__(self):
-        return hash((self.code, self.ext))
+        seq = ["".join(line.split()) for line in self.code.splitlines() if line.strip()]
+        seq2str = ''.join(seq)
+        return hash((seq2str, self.ext))
     
     def __eq__(self, other):
-        if not isinstance(other, Program):
+        if not isinstance(other, Program) or self.ext != other.ext:
             return False
-        return self.code == other.code and self.ext == other.ext
+        ted = TED(self.ext)
+        sim = ted.compute_levenshtein_led(self.code, other.code)
+        return sim == 0
+    
     
 class Programs:
     def __init__(self, programs:list[Program]=[]):

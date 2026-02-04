@@ -1,21 +1,20 @@
-from .spec import Spec
-
+from transformers import AutoTokenizer
 
 class Tokenizer:
-    @staticmethod
-    def parse(text:str) -> list[int]:
-        tokenizer = Spec.tokenizer
-        tokens = tokenizer.tokenize(text)
+    @classmethod
+    def set(cls, model_name:str):
+        cls.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+        
+    @classmethod
+    def parse(cls, text:str) -> list[int]:
+        tokens = cls.tokenizer.tokenize(text)
         return tokens
     
-    @staticmethod
-    def encode(text:str) -> list[int]:
-        tokenizer = Spec.tokenizer
-        input_ids = tokenizer.encode(text)
+    @classmethod
+    def encode(cls, text:str) -> list[int]:
+        input_ids = cls.tokenizer.encode(text)
         return input_ids
     
-    @staticmethod
-    def length(text:str) -> int:
-        tokenizer = Spec.tokenizer
-        input_ids = tokenizer.encode(text)
-        return len(input_ids)
+    @classmethod
+    def length(cls, text:str) -> int:
+        return len(cls.encode(text))
