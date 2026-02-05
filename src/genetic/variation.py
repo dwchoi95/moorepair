@@ -53,11 +53,9 @@ class Variation:
         
     def prioritization(self, buggy:Program, references:Programs):
         # 목적함수별 fitness 점수로 프로그램별 목적함수 우선순위 매기기
-        scores = {obj: {} for obj in self.fitness.objectives}
-        for refer in references:
-            fit = self.fitness.run(buggy, refer)
-            for obj, score in fit.items():
-                scores[obj][refer] = score
+        normalized = self.fitness.run(buggy, references)
+        scores = {obj: {refer.id: normalized[refer.id][obj] for refer in references}
+                   for obj in self.fitness.objectives}
         # obj별로 score가 낮은 순서대로 정렬하여 순위 매기기
         rankings = {obj: sorted(scores[obj], key=lambda x: scores[obj][x]) 
                     for obj in self.fitness.objectives}
@@ -65,7 +63,7 @@ class Variation:
         for refer in references:
             refer.meta['priorities'] = sorted(
                 self.fitness.objectives,
-                key=lambda obj: rankings[obj].index(refer)
+                key=lambda obj: rankings[obj].index(refer.id)
             )
         return references
     

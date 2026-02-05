@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from .results import Results
-from ..utils.ted import TED
+from ..utils import TED, ETC
     
 @dataclass
 class Program:
@@ -13,7 +13,7 @@ class Program:
     meta:dict = field(default_factory=dict, metadata={"desc":"Additional metadata"})
     
     def __hash__(self):
-        seq = ["".join(line.split()) for line in self.code.splitlines() if line.strip()]
+        seq = ETC.normalize_lines(self.code)
         seq2str = ''.join(seq)
         return hash((seq2str, self.ext))
     
@@ -75,3 +75,4 @@ class Programs:
     
     def copy(self) -> 'Programs':
         return Programs(self.programs.copy())
+    

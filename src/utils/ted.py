@@ -7,6 +7,9 @@ import Levenshtein
 import logging
 from codebleu import calc_codebleu
 
+from .etc import ETC
+
+
 class TED:
     LANGUAGE_PACKAGES = {
         'c': tsc.language(),
@@ -21,13 +24,7 @@ class TED:
 
     def clear_cache(self):
         self._to_tree.cache_clear()
-        self.compute_ted.cache_clear()
-        self.compute_sim.cache_clear()
-        self.compute_ast_size.cache_clear()
-        self.relative_patch_size.cache_clear()
         self._to_node_sequence.cache_clear()
-        self.compute_levenshtein_ted.cache_clear()
-        self.compute_levenshtein_led.cache_clear()
 
     def __compute_ast_size(self, tree):
         """
@@ -71,7 +68,6 @@ class TED:
         tree = self.parser.parse(bytes(code, "utf-8"))
         return self.__node_to_sequence(tree.root_node)
 
-    @cache
     def compute_ted(self, code1, code2):
         """
         Computes the tree edit distance between two pieces of code with APTED.
@@ -81,21 +77,19 @@ class TED:
         apted = APTED(tree1, tree2)
         return apted.compute_edit_distance()
 
-    @cache
     def compute_levenshtein_led(self, code1:str, code2:str):
         """
         Computes the edit distance between two Line(s) using Levenshtein distance
         on the sequence of node types.
         """
-        seq1 = ["".join(line.split()) for line in code1.splitlines() if line.strip()]
-        seq2 = ["".join(line.split()) for line in code2.splitlines() if line.strip()]
+        seq1 = ETC.normalize_lines(code1)
+        seq2 = ETC.normalize_lines(code2)
         seq_set = set(seq1).union(set(seq2))
         char_map = {node: chr(i + 1) for i, node in enumerate(seq_set)}
         str1 = ''.join(char_map[node] for node in seq1)
         str2 = ''.join(char_map[node] for node in seq2)
         return Levenshtein.distance(str1, str2)
     
-    @cache
     def compute_levenshtein_ted(self, code1, code2):
         """
         Computes the edit distance between two ASTs using Levenshtein distance
@@ -109,7 +103,6 @@ class TED:
         str2 = ''.join(char_map[node] for node in seq2)
         return Levenshtein.distance(str1, str2)
 
-    @cache
     def compute_sim(self, code1, code2):
         """
         Computes the similarity between two pieces of code based on tree edit distance with APTED.
@@ -122,12 +115,10 @@ class TED:
         similarity = 1 - (distance / max_size) if max_size > 0 else 1.0
         return similarity
 
-    @cache
     def compute_ast_size(self, code):
         tree = self._to_tree(code)
         return self.__compute_ast_size(tree)
 
-    @cache
     def relative_patch_size(self, buggy, patch):
         buggy_tree = self._to_tree(buggy)
         patch_tree = self._to_tree(patch)

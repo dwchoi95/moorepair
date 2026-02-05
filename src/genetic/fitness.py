@@ -3,7 +3,7 @@ warnings.filterwarnings("ignore")
 
 import numpy as np
 from tqdm import tqdm
-from pymoo.indicators.hv import HV
+from sklearn.preprocessing import MinMaxScaler
 
 from ..utils import TED, ETC
 from ..execution import Tester, Program, Programs
@@ -112,27 +112,14 @@ class Fitness:
         return results
     
     
-    def evaluate(self, buggy:Program, references:Programs) -> dict[str, list[float]]:
-        results = {obj: self.OBJ_FUNC_MAP[obj](buggy, references) 
+    def run(self, buggy:Program, references:Programs) -> dict[str, dict[str, float]]:
+        scores = {obj: self.OBJ_FUNC_MAP[obj](buggy, references) 
                    for obj in self.objectives}
-        scores = {refer.id: [results[obj][refer.id] for obj in self.objectives]
-                    for refer in references}
-        return scores
-    
-    def run(self, buggy:Program, patch:Program) -> dict[str, float]:
-        scores = {}
-        for obj in self.objectives:
-            scores[obj] = self.OBJ_FUNC_MAP[obj](buggy, Programs([patch]))[patch.id]
-        return scores
-    
-    def hypervolume(self, scores:dict[str, float] | list[float]) -> float:
-        if isinstance(scores, dict):
-            objectives = list(scores.keys())
-            x = np.array([scores[o] for o in objectives], dtype=float)
-            ref = np.ones(len(objectives), dtype=float)
-        elif isinstance(scores, list):
-            x = np.array(scores, dtype=float)
-            ref = np.ones(len(scores), dtype=float)
-        hv = HV(ref_point=ref)
-        return float(hv(x.reshape(1, -1)))
+        X = np.array([[scores[o][r.id] for o in self.objectives] for r in references], dtype=float)
+        scaler = MinMaxScaler(feature_range=(0.0, 1.0))
+        Xn = scaler.fit_transform(X)
+        normalized = {
+            r.id: {o: float(Xn[i, j]) for j, o in enumerate(self.objectives)}
+            for i, r in enumerate(references)}
+        return normalized
     

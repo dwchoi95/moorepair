@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 
 from src.llms import Models, Tokenizer
 from src.genetic import GA, Fitness, Selection
-from src.utils import ETC, TED, Loader
+from src.utils import ETC, Loader
 from src.execution import Tester, Programs, TestCases
 
 
@@ -70,7 +70,8 @@ class Experiments:
             "#Buggys",
             "#Fixed",
             "%Repair Rate",
-            "%Similarity",
+            "%LED Similarity",
+            "%TED Similarity",
             "%Execution Time",
             "%Memory Usage"
         ])
@@ -82,51 +83,60 @@ class Experiments:
             buggy = buggys.get_prog_by_id(b_id)
             refer = references.get_prog_by_id(b_id)
             
-            # Generation별로 처리
             for gen, solutions in result.items():
                 if gen not in generation_stats:
                     generation_stats[gen] = {
                         'accuracy': 0,
-                        'similarity': 0,
-                        'runtime': 0,
-                        'memory': 0,
+                        'led': 0,
+                        'ted': 0,
+                        'et': 0,
+                        'mem': 0,
                     }
             
                 # Selection of best solution for this generation
-                scoring = {}
-                for patch in solutions:
-                    scores = self.fitness.run(buggy, patch)
-                    scoring[patch.id] = scores
-                if not scoring: continue
-                sol_id = self.select.hype(scoring)
-                patch = solutions.get_prog_by_id(sol_id)
+                cp_sol = solutions.copy()
+                cp_sol.append(refer)
+                scores = self.fitness.run(buggy, cp_sol)
+                scores_exclude_refer = {k: v for k, v in scores.items() if k != refer.id}
+                best = self.select.hype(scores_exclude_refer)
+                patch = solutions.get_prog_by_id(best)
+                
                 # Evaluation
+                patch_score = scores[patch.id]
+                refer_score = scores[refer.id]
+                
                 ## accuracy
                 generation_stats[gen]['accuracy'] += 1
                 
                 ## similarity
-                ted = TED(buggy.ext)
-                refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
-                patch_sim = ted.compute_levenshtein_led(buggy.code, patch.code)
-                generation_stats[gen]['similarity'] += self.ratio(
-                    (refer_sim - patch_sim), (refer_sim + patch_sim))
+                ### Line-level Edit Distance
+                refer_led = refer_score['f3']
+                patch_led = patch_score['f3']
+                generation_stats[gen]['led'] += self.ratio(
+                    (refer_led - patch_led), (refer_led + patch_led))
+                
+                ### AST-level Edit Distance
+                refer_ted = refer_score['f4']
+                patch_ted = patch_score['f4']
+                generation_stats[gen]['ted'] += self.ratio(
+                    (refer_ted - patch_ted), (refer_ted + patch_ted))
                 
                 ## efficiency
-                refer_time = refer.results.exec_time()
-                patch_time = patch.results.exec_time()
-                generation_stats[gen]['runtime'] += self.ratio(
+                ### Execution Time
+                refer_time = refer_score['f5']
+                patch_time = patch_score['f5']
+                generation_stats[gen]['et'] += self.ratio(
                     (refer_time - patch_time), (refer_time + patch_time))
                 
-                refer_mem = refer.results.mem_usage()
-                patch_mem = patch.results.mem_usage()
-                generation_stats[gen]['memory'] += self.ratio(
+                ### Memory Usage
+                refer_mem = refer_score['f6']
+                patch_mem = patch_score['f6']
+                generation_stats[gen]['mem'] += self.ratio(
                     (refer_mem - patch_mem), (refer_mem + patch_mem))
                 
-                # 마지막 generation의 best solution만 final에 저장
                 if gen == max(result.keys()):
                     final.append((buggy, refer, patch))
                          
-        
         total_bugs = len(buggys)
         total_refs = len(references)
         for gen in sorted(generation_stats.keys()):
@@ -139,9 +149,10 @@ class Experiments:
                 total_bugs,
                 fixed,
                 f"{ETC.divide(fixed, total_bugs) * 100:.2f}%",
-                f"{ETC.divide(stats['similarity'], fixed) * 100:.2f}%",
-                f"{ETC.divide(stats['runtime'], fixed) * 100:.2f}%",
-                f"{ETC.divide(stats['memory'], fixed) * 100:.2f}%"
+                f"{ETC.divide(stats['led'], fixed) * 100:.2f}%",
+                f"{ETC.divide(stats['ted'], fixed) * 100:.2f}%",
+                f"{ETC.divide(stats['et'], fixed) * 100:.2f}%",
+                f"{ETC.divide(stats['mem'], fixed) * 100:.2f}%"
             ])
         
         print(table)
@@ -178,22 +189,22 @@ class Experiments:
 
         df = pd.read_csv(summary_path)
 
-        # 안전: 컬럼명이 다르면 바로 종료(또는 raise)
         required_cols = [
             "#Trial", "#Generation", "#References", "#Buggys", "#Fixed",
-            "%Repair Rate", "%Similarity", "%Execution Time", "%Memory Usage"
+            "%Repair Rate", "%LED Similarity", "%TED Similarity", 
+            "%Execution Time", "%Memory Usage"
         ]
         for c in required_cols:
             if c not in df.columns:
                 return
 
-        # 최종 generation만 사용
+        # Use only the final generation for each trial
         final_gen = int(df["#Generation"].max())
         dff = df[df["#Generation"] == final_gen].copy()
         if dff.empty:
             return
 
-        # 퍼센트 문자열 -> float 변환
+        # Convert percentage strings to float
         def pct_to_float(x):
             if pd.isna(x):
                 return 0.0
@@ -205,23 +216,22 @@ class Experiments:
             except ValueError:
                 return 0.0
 
-        pct_cols = ["%Repair Rate", "%Similarity", "%Execution Time", "%Memory Usage"]
+        pct_cols = ["%Repair Rate", "%LED Similarity", "%TED Similarity", "%Execution Time", "%Memory Usage"]
         for c in pct_cols:
             dff[c] = dff[c].apply(pct_to_float)
 
-        # 평균 계산 (final generation에서 trial별 row 평균)
-        # (#Fixed도 평균 내서 "평균적으로 몇 개 고쳤나"를 보여줌)
+        # Calculate averages (mean of rows per trial in the final generation)
+        # (Also average #Fixed to show "average number fixed")
         mean_fixed = float(dff["#Fixed"].mean()) if len(dff) else 0.0
         mean_acc = float(dff["%Repair Rate"].mean()) if len(dff) else 0.0
-        mean_sim = float(dff["%Similarity"].mean()) if len(dff) else 0.0
+        mean_sim_led = float(dff["%LED Similarity"].mean()) if len(dff) else 0.0
+        mean_sim_ted = float(dff["%TED Similarity"].mean()) if len(dff) else 0.0
         mean_time = float(dff["%Execution Time"].mean()) if len(dff) else 0.0
         mean_mem = float(dff["%Memory Usage"].mean()) if len(dff) else 0.0
-
-        # references/buggys는 고정값이라 첫 row 사용
         total_refs = int(dff["#References"].iloc[0])
         total_bugs = int(dff["#Buggys"].iloc[0])
 
-        # overall.csv에 누적 저장 (problem별 1 row)
+        # Save to overall results
         overall_path = os.path.join("results", "overall.csv")
         os.makedirs(os.path.dirname(overall_path), exist_ok=True)
 
@@ -234,7 +244,8 @@ class Experiments:
             "#Buggys",
             "#Fixed(avg)",
             "%Repair Rate(avg)",
-            "%Similarity(avg)",
+            "%LED Similarity(avg)",
+            "%TED Similarity(avg)",
             "%Execution Time(avg)",
             "%Memory Usage(avg)",
         ]
@@ -248,7 +259,8 @@ class Experiments:
             total_bugs,
             f"{mean_fixed:.2f}",
             f"{mean_acc:.2f}%",
-            f"{mean_sim:.2f}%",
+            f"{mean_sim_led:.2f}%",
+            f"{mean_sim_ted:.2f}%",
             f"{mean_time:.2f}%",
             f"{mean_mem:.2f}%",
         ]

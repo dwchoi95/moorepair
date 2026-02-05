@@ -18,3 +18,11 @@ class ETC:
         except ZeroDivisionError:
             res = 0
         return res
+    
+    @staticmethod
+    def normalize_lines(code: str) -> list:
+        return ["".join(line.split()) for line in code.splitlines() if line.strip()]
+    
+    @staticmethod
+    def normalize_code(code: str) -> str:
+        return "\n".join(ETC.normalize_lines(code))

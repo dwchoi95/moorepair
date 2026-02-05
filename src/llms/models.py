@@ -8,7 +8,7 @@ class Models:
                  model:str="codellama/CodeLlama-7b-Instruct-hf", 
                  temperature:float=0.8,
                  token_limit:int=4096,
-                 timeout:int=30):
+                 timeout:int=10):
         from dotenv import load_dotenv
         import os
         load_dotenv()
@@ -16,7 +16,8 @@ class Models:
         
         cls.client = AsyncOpenAI(
             timeout=timeout, 
-            base_url=LOCAL_API_URL)
+            base_url=LOCAL_API_URL,
+            max_retries=0)
         cls.model = model
         cls.temperature = temperature
         cls.token_limit = token_limit
@@ -33,6 +34,7 @@ class Models:
                 ],
                 temperature=cls.temperature,
                 max_tokens=cls.token_limit,
+                timeout=cls.timeout,
                 extra_body={
                     "structured_outputs": {
                         "json": format.model_json_schema(),
@@ -43,6 +45,6 @@ class Models:
             res = format.model_validate_json(content)
             return res
         except Exception as e:
-            print(e)
+            # print(e)
             pass
         return None

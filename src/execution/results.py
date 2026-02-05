@@ -1,3 +1,4 @@
+import statistics
 from dataclasses import dataclass, field
 
 from .testcases import TestCase
@@ -65,15 +66,17 @@ class Results:
         self.ts = [tr for tr in self.ts if tr.testcase.id != testcase.id]
     
     def exec_time(self) -> float:
-        total_exec_time = 0.0
+        total_exec_time = []
         for tr in self.ts:
-            total_exec_time += tr.result.exec_time
-        return total_exec_time
+            total_exec_time.append(tr.result.exec_time)
+        median = statistics.median(total_exec_time)
+        return median
     
     def mem_usage(self) -> float:
-        total_mem_usage = 0.0
+        total_mem_usage = []
         for tr in self.ts:
-            total_mem_usage += tr.result.mem_usage
-        return total_mem_usage
-    
+            total_mem_usage.append(tr.result.mem_usage)
+        median = statistics.median(total_mem_usage)
+        return median
+
     

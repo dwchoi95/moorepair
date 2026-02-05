@@ -8,6 +8,7 @@ from .fitness import Fitness
 from ..execution import Programs, Program, Tester
 from ..utils import ETC, TED
 
+
 class GeneticAlgorithm:
     def __init__(self,
         buggys:Programs,
@@ -52,23 +53,20 @@ class GeneticAlgorithm:
         return population
     
     def _ga_run(self, buggy:Program, generations:int, 
-                pop_size:int, selection:str, threshold:int) -> dict:
+                pop_size:int, selection:str, threshold:float) -> dict:
         result = {}
         early_stop = False
         solutions = Programs()
         population = self._init_population(buggy, pop_size)
-        population_codes = {pop.code for pop in population}
-        
+
         refer = self.references.get_prog_by_id(buggy.id)
-        Tester.run(refer)
-        ted = TED(buggy.ext)
-        refer_sim = ted.compute_levenshtein_led(buggy.code, refer.code)
-        refer_time = refer.results.exec_time()
-        refer_mem = refer.results.mem_usage()
         
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
-            if early_stop: break
+            if early_stop:
+                for g in range(gen, generations+1):
+                    result.setdefault(g, solutions.copy())
+                break
             result.setdefault(gen, solutions.copy())
             self.logger.info(f"=== Generation {gen} ===")
             
@@ -77,46 +75,64 @@ class GeneticAlgorithm:
             
             # LLM-guided Variation
             childs = self.variation.run(buggy, parents)
+            progs = childs.copy()
+            progs.append(refer)
+            scores = self.fitness.run(buggy, progs)
                 
             # Update Population
             for child in tqdm(childs, desc="Evaluation", position=2, leave=False):
-                if child.code not in population_codes:
-                    child.id = f"pop_{len(population)+1}"
-                    population.append(child)
-                    population_codes.add(child.code)
+                refer_score = scores[refer.id]
+                patch_score = scores[child.id]
                 
-                # Validation
+                child.id = f"pop_{len(population)+1}"
+                population.append(child)
+            
+                # Early Stop Criterion Check
+
+                ## Correctness
+                ### Validation
                 results = Tester.run(child)
                 if not Tester.is_all_pass(results): continue
                 
-                # Add to Solutions
-                solutions.append(child)
-
-                # Early Stop Criterion Check
-                ## similarity
-                patch_sim = ted.compute_levenshtein_led(buggy.code, child.code)
-                sim = ETC.divide(
-                    (refer_sim - patch_sim), (refer_sim + patch_sim))
-                ## execution time
-                patch_time = child.results.exec_time()
+                ## Similarity
+                ### Line-level Edit Distance
+                refer_led = refer_score['f3']
+                patch_led = patch_score['f3']
+                led = ETC.divide(
+                    (refer_led - patch_led), (refer_led + patch_led))
+                ### AST-level Edit Distance
+                refer_ted = refer_score['f4']
+                patch_ted = patch_score['f4']
+                ted = ETC.divide(
+                    (refer_ted - patch_ted), (refer_ted + patch_ted))
+                
+                ## Efficiency
+                ### Execution Time
+                refer_time = refer_score['f5']
+                patch_time = patch_score['f5']
                 exec_time = ETC.divide(
                     (refer_time - patch_time), (refer_time + patch_time))
-                ## memory usage
-                patch_mem = child.results.mem_usage()
+                ## Memory Usage
+                refer_mem = refer_score['f6']
+                patch_mem = patch_score['f6']
                 mem_usage = ETC.divide(
                     (refer_mem - patch_mem), (refer_mem + patch_mem))
+
+                # Add to Solutions
+                solutions.append(child)
                 
-                log = f"Patch {len(solutions)}: SIM: {sim:.2f} | ET: {exec_time:.2f} | MEM: {mem_usage:.2f}"
-                if sim >= 0 and exec_time >= 0 and mem_usage >= 0:
+                log = f"Patch {len(solutions)}: LED: {led:.2f} | TED: {ted:.2f} | ET: {exec_time:.2f} | MEM: {mem_usage:.2f}"
+                mean = ETC.divide(led + ted + exec_time + mem_usage, 4)
+                if mean >= threshold:
                     early_stop = True
                     log += f" >>> Early Stopped!"
                 log += f"\n{child.code}\n"
                 self.logger.info(log)
-                
+        
         return result
         
     def run(self, generations:int=3, pop_size:int=10, 
-            selection:str="nsga3", threshold:int=5) -> dict:
+            selection:str="nsga3", threshold:float=0.5) -> dict:
         results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
             results[buggy.id] = self._ga_run(buggy, generations, 

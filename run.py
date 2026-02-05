@@ -18,8 +18,8 @@ if __name__ == "__main__":
                         help="Use initialization for population")
     parser.add_argument('-s', '--selection', type=str, default='nsga3',
                         help=f"Select method for selection, e.g., {', '.join(SELECTIONS)}")
-    parser.add_argument('--threshold', type=int, default=5,
-                        help="Set a threshold for early stop of GP, default is 5")
+    parser.add_argument('--threshold', type=float, default=0.5,
+                        help="Set a threshold for early stop of GP, default is 0.5")
     parser.add_argument('-l', '--llm', type=str, default='codellama/CodeLlama-7b-Instruct-hf',
                         help="Select LLM model for generating patches, default is codellama/CodeLlama-7b-Instruct-hf")
     parser.add_argument('--temperature', type=float, default=0.8,
@@ -66,8 +66,8 @@ if __name__ == "__main__":
         "Initialization must be a boolean value"
     if isinstance(selection, str) and selection not in SELECTIONS:
         raise ValueError(f"Invalid selection method, choose {', '.join(SELECTIONS)}")
-    assert isinstance(threshold, int) and threshold >= 1, \
-        "Threshold must be a positive integer"
+    assert isinstance(threshold, float) and threshold >= 0, \
+        "Threshold must be a non-negative float value"
     assert isinstance(executions, int) and executions > 0, \
         "Executions must be a positive integer"
     assert isinstance(sampling, bool), \
