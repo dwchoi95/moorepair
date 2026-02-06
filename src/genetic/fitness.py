@@ -111,8 +111,7 @@ class Fitness:
             results[refer.id] = refer_tests.mem_usage()
         return results
     
-    
-    def run(self, buggy:Program, references:Programs) -> dict[str, dict[str, float]]:
+    def evaluate(self, buggy:Program, references:Programs) -> dict[str, dict[str, float]]:
         scores = {obj: self.OBJ_FUNC_MAP[obj](buggy, references) 
                    for obj in self.objectives}
         X = np.array([[scores[o][r.id] for o in self.objectives] for r in references], dtype=float)
@@ -122,4 +121,10 @@ class Fitness:
             r.id: {o: float(Xn[i, j]) for j, o in enumerate(self.objectives)}
             for i, r in enumerate(references)}
         return normalized
+    
+    def run(self, buggy:Program, references:Programs) -> dict[str, list[float]]:
+        normalized = self.evaluate(buggy, references)
+        scores = {refer.id: [normalized[refer.id][obj] for obj in self.objectives]
+                    for refer in references}
+        return scores
     

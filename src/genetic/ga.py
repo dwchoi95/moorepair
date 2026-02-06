@@ -63,10 +63,7 @@ class GeneticAlgorithm:
         
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
-            if early_stop:
-                for g in range(gen, generations+1):
-                    result.setdefault(g, solutions.copy())
-                break
+            if early_stop: break
             result.setdefault(gen, solutions.copy())
             self.logger.info(f"=== Generation {gen} ===")
             
@@ -77,7 +74,7 @@ class GeneticAlgorithm:
             childs = self.variation.run(buggy, parents)
             progs = childs.copy()
             progs.append(refer)
-            scores = self.fitness.run(buggy, progs)
+            scores = self.fitness.evaluate(buggy, progs)
                 
             # Update Population
             for child in tqdm(childs, desc="Evaluation", position=2, leave=False):

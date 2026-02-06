@@ -156,9 +156,7 @@ class Selection:
     
     def run(self, buggy:Program, references:Programs, pop_size:int, selection:str="rnsga3") -> Programs:
         # Fitness Evaluation
-        normalized = self.fitness.run(buggy, references)
-        scores = {refer.id: [normalized[refer.id][obj] for obj in self.fitness.objectives]
-                    for refer in references}
+        scores = self.fitness.run(buggy, references)
         
         # Selection
         if selection == "none":
