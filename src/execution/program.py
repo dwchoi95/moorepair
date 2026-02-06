@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 
 from .results import Results
-from ..utils import TED, ETC
     
 @dataclass
 class Program:
@@ -13,11 +12,13 @@ class Program:
     meta:dict = field(default_factory=dict, metadata={"desc":"Additional metadata"})
     
     def __hash__(self):
+        from ..utils import ETC
         seq = ETC.normalize_lines(self.code)
         seq2str = ''.join(seq)
         return hash((seq2str, self.ext))
     
     def __eq__(self, other):
+        from ..utils import TED
         if not isinstance(other, Program) or self.ext != other.ext:
             return False
         ted = TED(self.ext)

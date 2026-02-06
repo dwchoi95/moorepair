@@ -92,7 +92,9 @@ class Experiments:
                         'et': 0,
                         'mem': 0,
                     }
-            
+
+                if not solutions: continue
+                
                 # Selection of best solution for this generation
                 cp_sol = solutions.copy()
                 cp_sol.append(refer)
