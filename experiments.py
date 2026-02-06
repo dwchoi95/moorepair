@@ -40,6 +40,18 @@ class Experiments:
         self.reset = reset
         self.multi = multi
         self.obj = "".join(objectives)
+        
+        self.evaluation_cols = [
+            "%RR", "%LED", "%TED", 
+            "%ET", "%MEM"
+        ]
+        self.results_cols = [
+            "#Trial", "#Gen", "#Refer", 
+            "#Buggy", "#Fixed"
+        ] + self.evaluation_cols
+        self.experiments_cols = [
+            "ProblemID", "Selection"
+        ] + self.results_cols
     
     def ratio(self, numerator: float, denominator: float) -> float:
         if numerator == 0 or denominator == 0:
@@ -62,19 +74,9 @@ class Experiments:
             pickle.dump(results, f)
         
         final = []
-        generation_stats = {}
-        table = PrettyTable([
-            "#Trial",
-            "#Generation",
-            "#References",
-            "#Buggys",
-            "#Fixed",
-            "%Repair Rate",
-            "%LED Similarity",
-            "%TED Similarity",
-            "%Execution Time",
-            "%Memory Usage"
-        ])
+        generation_stats = {gen: { 'acc': 0, 'led': 0, 'ted': 0, 'et': 0, 'mem': 0 } 
+                            for gen in range(1, self.generations+1)}
+        table = PrettyTable(self.results_cols)
         
         for b_id, result in tqdm(results.items(), desc="Save", leave=False):
             # No solution found
@@ -83,32 +85,23 @@ class Experiments:
             buggy = buggys.get_prog_by_id(b_id)
             refer = references.get_prog_by_id(b_id)
             
-            for gen, solutions in result.items():
-                if gen not in generation_stats:
-                    generation_stats[gen] = {
-                        'accuracy': 0,
-                        'led': 0,
-                        'ted': 0,
-                        'et': 0,
-                        'mem': 0,
-                    }
-
+            for gen in range(1, self.generations+1):
+                if gen not in result: continue
+                solutions = result[gen]
                 if not solutions: continue
                 
-                # Selection of best solution for this generation
-                cp_sol = solutions.copy()
-                cp_sol.append(refer)
-                scores = self.fitness.run(buggy, cp_sol)
-                scores_exclude_refer = {k: v for k, v in scores.items() if k != refer.id}
-                best = self.select.hype(scores_exclude_refer)
-                patch = solutions.get_prog_by_id(best)
+                # Selection of best solution in this generation
+                patch = self.select.run(buggy, solutions, 1, "hype")[0]
                 
                 # Evaluation
+                union = solutions.copy()
+                union.append(refer)
+                scores = self.fitness.evaluate(buggy, union)
                 patch_score = scores[patch.id]
                 refer_score = scores[refer.id]
                 
                 ## accuracy
-                generation_stats[gen]['accuracy'] += 1
+                generation_stats[gen]['acc'] += 1
                 
                 ## similarity
                 ### Line-level Edit Distance
@@ -143,7 +136,7 @@ class Experiments:
         total_refs = len(references)
         for gen in sorted(generation_stats.keys()):
             stats = generation_stats[gen]
-            fixed = stats['accuracy']
+            fixed = stats['acc']
             table.add_row([
                 trial,
                 gen,
@@ -191,18 +184,13 @@ class Experiments:
 
         df = pd.read_csv(summary_path)
 
-        required_cols = [
-            "#Trial", "#Generation", "#References", "#Buggys", "#Fixed",
-            "%Repair Rate", "%LED Similarity", "%TED Similarity", 
-            "%Execution Time", "%Memory Usage"
-        ]
-        for c in required_cols:
+        for c in self.results_cols:
             if c not in df.columns:
                 return
 
         # Use only the final generation for each trial
-        final_gen = int(df["#Generation"].max())
-        dff = df[df["#Generation"] == final_gen].copy()
+        final_gen = int(df["#Gen"].max())
+        dff = df[df["#Gen"] == final_gen].copy()
         if dff.empty:
             return
 
@@ -217,40 +205,24 @@ class Experiments:
                 return float(s)
             except ValueError:
                 return 0.0
-
-        pct_cols = ["%Repair Rate", "%LED Similarity", "%TED Similarity", "%Execution Time", "%Memory Usage"]
-        for c in pct_cols:
+            
+        for c in self.evaluation_cols:
             dff[c] = dff[c].apply(pct_to_float)
 
         # Calculate averages (mean of rows per trial in the final generation)
         # (Also average #Fixed to show "average number fixed")
+        total_refs = int(dff["#Refer"].iloc[0])
+        total_bugs = int(dff["#Buggy"].iloc[0])
         mean_fixed = float(dff["#Fixed"].mean()) if len(dff) else 0.0
-        mean_acc = float(dff["%Repair Rate"].mean()) if len(dff) else 0.0
-        mean_sim_led = float(dff["%LED Similarity"].mean()) if len(dff) else 0.0
-        mean_sim_ted = float(dff["%TED Similarity"].mean()) if len(dff) else 0.0
-        mean_time = float(dff["%Execution Time"].mean()) if len(dff) else 0.0
-        mean_mem = float(dff["%Memory Usage"].mean()) if len(dff) else 0.0
-        total_refs = int(dff["#References"].iloc[0])
-        total_bugs = int(dff["#Buggys"].iloc[0])
+        mean_acc = float(dff["%RR"].mean()) if len(dff) else 0.0
+        mean_sim_led = float(dff["%LED"].mean()) if len(dff) else 0.0
+        mean_sim_ted = float(dff["%TED"].mean()) if len(dff) else 0.0
+        mean_time = float(dff["%ET"].mean()) if len(dff) else 0.0
+        mean_mem = float(dff["%MEM"].mean()) if len(dff) else 0.0
 
         # Save to overall results
         overall_path = os.path.join("results", "overall.csv")
         os.makedirs(os.path.dirname(overall_path), exist_ok=True)
-
-        headers = [
-            "ProblemID",
-            "Selection",
-            "#Trials",
-            "#FinalGeneration",
-            "#References",
-            "#Buggys",
-            "#Fixed(avg)",
-            "%Repair Rate(avg)",
-            "%LED Similarity(avg)",
-            "%TED Similarity(avg)",
-            "%Execution Time(avg)",
-            "%Memory Usage(avg)",
-        ]
 
         row = [
             problemId,
@@ -268,17 +240,11 @@ class Experiments:
         ]
 
         file_exists = os.path.exists(overall_path) and os.path.getsize(overall_path) > 0
-        if self.reset:
-            with open(overall_path, mode="w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
-                writer.writerow(row)
-        else:
-            with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                if not file_exists:
-                    writer.writerow(headers)
-                writer.writerow(row)
+        with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(self.experiments_cols)
+            writer.writerow(row)
         
 
     def __core(self, trial:int, problemId:int, description:str,
@@ -296,6 +262,9 @@ class Experiments:
         )
             
     def run(self, problems:list):
+        experiments_path = os.path.join('results', 'overall.csv')
+        if os.path.isfile(experiments_path) and self.reset:
+            os.remove(experiments_path)
         for problem in problems:
             problemId, description, buggys, \
                 references, testcases = self.loader.run(problem)
