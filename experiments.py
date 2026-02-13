@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 from src.llms import Models, Tokenizer
 from src.genetic import GA, Fitness, Selection
 from src.utils import ETC, Loader
-from src.execution import Tester, Programs, TestCases
+from src.execution import Tester, Program, Programs, TestCases
 
 
 class Experiments:
@@ -23,7 +23,7 @@ class Experiments:
         llm:str="codellama/CodeLlama-7b-Instruct-hf", 
         temperature:float=0.8, timelimit:int=1,
         objectives:list=Fitness.OBJECTIVES, trials:int=10,
-        sampling:bool=False, reset:bool=False, multi:bool=False,
+        sampling:bool=False, reset:bool=False,
     ):  
         self.loader = Loader(sampling, initialization)
         
@@ -38,11 +38,10 @@ class Experiments:
         Tokenizer.set(llm)
         self.trials = trials
         self.reset = reset
-        self.multi = multi
         self.obj = "".join(objectives)
         
         self.evaluation_cols = [
-            "%RR", "%LED", "%TED", 
+            "%RR", "%CCD", "%TED", 
             "%ET", "%MEM"
         ]
         self.results_cols = [
@@ -63,7 +62,7 @@ class Experiments:
         
     def __save_results(self, trial:int, problemId:int, 
                        buggys:Programs, references:Programs, 
-                       results:dict[str, dict[int, Programs]]) -> None:
+                       results:dict[str, dict[int, list[Program]]]) -> None:
         
         # Save Results
         results_dir = os.path.join('results', str(problemId), self.selection)
@@ -74,7 +73,7 @@ class Experiments:
             pickle.dump(results, f)
         
         final = []
-        generation_stats = {gen: { 'acc': 0, 'led': 0, 'ted': 0, 'et': 0, 'mem': 0 } 
+        generation_stats = {gen: { 'acc': 0, 'ccd': 0, 'ted': 0, 'et': 0, 'mem': 0 } 
                             for gen in range(1, self.generations+1)}
         table = PrettyTable(self.results_cols)
         
@@ -91,7 +90,7 @@ class Experiments:
                 if not solutions: continue
                 
                 # Selection of best solution in this generation
-                patch = self.select.run(buggy, solutions, 1, "hype")[0]
+                patch = self.select.replacement(buggy, solutions, 1, "hype")[0]
                 
                 # Evaluation
                 union = solutions.copy()
@@ -104,11 +103,11 @@ class Experiments:
                 generation_stats[gen]['acc'] += 1
                 
                 ## similarity
-                ### Line-level Edit Distance
-                refer_led = refer_score['f3']
-                patch_led = patch_score['f3']
-                generation_stats[gen]['led'] += self.ratio(
-                    (refer_led - patch_led), (refer_led + patch_led))
+                ### Code Coverage Distance
+                refer_ccd = refer_score['f3']
+                patch_ccd = patch_score['f3']
+                generation_stats[gen]['ccd'] += self.ratio(
+                    (refer_ccd - patch_ccd), (refer_ccd + patch_ccd))
                 
                 ### AST-level Edit Distance
                 refer_ted = refer_score['f4']
@@ -144,7 +143,7 @@ class Experiments:
                 total_bugs,
                 fixed,
                 f"{ETC.divide(fixed, total_bugs) * 100:.2f}%",
-                f"{ETC.divide(stats['led'], fixed) * 100:.2f}%",
+                f"{ETC.divide(stats['ccd'], fixed) * 100:.2f}%",
                 f"{ETC.divide(stats['ted'], fixed) * 100:.2f}%",
                 f"{ETC.divide(stats['et'], fixed) * 100:.2f}%",
                 f"{ETC.divide(stats['mem'], fixed) * 100:.2f}%"
@@ -215,7 +214,7 @@ class Experiments:
         total_bugs = int(dff["#Buggy"].iloc[0])
         mean_fixed = float(dff["#Fixed"].mean()) if len(dff) else 0.0
         mean_acc = float(dff["%RR"].mean()) if len(dff) else 0.0
-        mean_sim_led = float(dff["%LED"].mean()) if len(dff) else 0.0
+        mean_sim_ccd = float(dff["%CCD"].mean()) if len(dff) else 0.0
         mean_sim_ted = float(dff["%TED"].mean()) if len(dff) else 0.0
         mean_time = float(dff["%ET"].mean()) if len(dff) else 0.0
         mean_mem = float(dff["%MEM"].mean()) if len(dff) else 0.0
@@ -233,7 +232,7 @@ class Experiments:
             total_bugs,
             f"{mean_fixed:.2f}",
             f"{mean_acc:.2f}%",
-            f"{mean_sim_led:.2f}%",
+            f"{mean_sim_ccd:.2f}%",
             f"{mean_sim_ted:.2f}%",
             f"{mean_time:.2f}%",
             f"{mean_mem:.2f}%",
@@ -249,6 +248,17 @@ class Experiments:
 
     def __core(self, trial:int, problemId:int, description:str,
                buggys:Programs, references:Programs, testcases:TestCases):
+        # Skip if results already exist
+        raw_results_path = os.path.join(
+            'results', str(problemId), self.selection, 'raw', f'trial_{trial}.pkl')
+        if os.path.exists(raw_results_path):
+            with open(raw_results_path, 'rb') as f:
+                results = pickle.load(f)
+            self.__save_results(
+                trial, problemId, buggys, references, results
+            )
+            return
+    
         # Generate Feedback
         log_path = os.path.join('logs', str(problemId), self.selection, f'trial_{trial}.log')
         Tester.init_globals(testcases, self.timelimit)
@@ -270,7 +280,7 @@ class Experiments:
                 references, testcases = self.loader.run(problem)
             print(f"\n=== {problemId} ===")
             results_dir = os.path.join('results', str(problemId), self.selection)
-            if os.path.exists(results_dir):
+            if os.path.exists(results_dir) and self.reset:
                 shutil.rmtree(results_dir)
             for trial in range(1, self.trials+1):
                 self.__core(

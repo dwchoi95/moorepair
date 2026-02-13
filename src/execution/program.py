@@ -13,17 +13,13 @@ class Program:
     
     def __hash__(self):
         from ..utils import ETC
-        seq = ETC.normalize_lines(self.code)
-        seq2str = ''.join(seq)
-        return hash((seq2str, self.ext))
+        return hash((ETC.normalize_code(self.code), self.ext))
     
     def __eq__(self, other):
-        from ..utils import TED
         if not isinstance(other, Program) or self.ext != other.ext:
             return False
-        ted = TED(self.ext)
-        sim = ted.compute_levenshtein_led(self.code, other.code)
-        return sim == 0
+        from ..utils import ETC
+        return ETC.normalize_code(self.code) == ETC.normalize_code(other.code)
     
     
 class Programs:

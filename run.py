@@ -10,16 +10,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', type=str, required=True,
                         help="The path of dataset")
-    parser.add_argument('-g', '--generations', type=int, default=20,
-                        help="Number of generations, default is 20")
+    parser.add_argument('-g', '--generations', type=int, default=10,
+                        help="Number of generations, default is 10")
     parser.add_argument('-p', '--popsize', type=int, default=10,
                         help="Number of population size, default is 10")
     parser.add_argument('-i', '--initialization', action='store_true', default=False,
                         help="Use initialization for population")
     parser.add_argument('-s', '--selection', type=str, default='nsga3',
                         help=f"Select method for selection, e.g., {', '.join(SELECTIONS)}")
-    parser.add_argument('--threshold', type=float, default=0.5,
-                        help="Set a threshold for early stop of GP, default is 0.5")
+    parser.add_argument('--threshold', type=float, default=0.1,
+                        help="Set a threshold for early stop of GP, default is 0.1")
     parser.add_argument('-l', '--llm', type=str, default='codellama/CodeLlama-7b-Instruct-hf',
                         help="Select LLM model for generating patches, default is codellama/CodeLlama-7b-Instruct-hf")
     parser.add_argument('--temperature', type=float, default=0.8,
@@ -32,8 +32,6 @@ if __name__ == "__main__":
                         help="Experiment with 10% sampling data")
     parser.add_argument('-r', '--reset', action='store_true', default=False,
                         help="Reset experimental results")
-    parser.add_argument('-m', '--multiprocess', action='store_true', default=False,
-                        help="Run with multiprocessing")
     parser.add_argument('-o', '--objectives', nargs='+', default=" ".join(Fitness.OBJECTIVES),
                         help=f"Select objectives to considered, e.g., '{' '.join(Fitness.OBJECTIVES)}'")
     args = parser.parse_args()
@@ -51,7 +49,6 @@ if __name__ == "__main__":
     executions = args.executions
     sampling = args.sampling
     reset = args.reset
-    multi = args.multiprocess
     objectives = args.objectives
     if isinstance(objectives, str):
         objectives = objectives.split(' ')
@@ -74,8 +71,6 @@ if __name__ == "__main__":
         "Sampling must be a boolean value"
     assert isinstance(reset, bool), \
         "Reset must be a boolean value"
-    assert isinstance(multi, bool), \
-        "Multiprocess must be a boolean value"
     assert isinstance(objectives, list) and \
         all(isinstance(obj, str) for obj in objectives), \
         "Objectives must be a list of strings"
@@ -93,7 +88,7 @@ if __name__ == "__main__":
         selection, threshold, 
         llm, temperature, timelimit,
         objectives, executions, 
-        sampling, reset, multi
+        sampling, reset
     )
     ex.run(problems)
     

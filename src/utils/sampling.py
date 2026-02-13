@@ -6,6 +6,7 @@ class Sampling:
         self.programs = programs
         self.k = len(programs) / 10
         if self.k < 10: self.k = 10
+        # self.k = 1 # debug
     
     def random(self) -> list:
         Randoms.seed = 42

@@ -15,9 +15,9 @@ class TestCase:
         return self.id == other.id and self.input == other.input and self.output == other.output
     
     def __str__(self):
-        prints = f'### Test Case ID: {self.id}\n'
-        prints += f'[Input]\n```\n{self.input}\n```\n'
-        prints += f'[Output]\n```\n{self.output}\n```\n'
+        prints = f'## Test Case ID: {self.id}\n  '
+        prints += f'[Input]\n```\n{self.input.strip()}\n```\n'
+        prints += f'[Output]\n```\n{self.output.strip()}\n```\n'
         return prints
 
 class TestCases:

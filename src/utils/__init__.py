@@ -1,4 +1,4 @@
 from .randoms import Randoms
 from .etc import ETC
-from .ted import TED
+from .distance import Distance as DIST
 from .loader import Loader

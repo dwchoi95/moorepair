@@ -3,6 +3,8 @@ warnings.filterwarnings("ignore")
 
 import re
 import os
+import glob
+import shutil
 import time
 import psutil
 import threading
@@ -25,9 +27,10 @@ class Tester:
     )
     
     @classmethod
-    def init_globals(cls, testcases:TestCases, timelimit:int=1):
+    def init_globals(cls, testcases:TestCases, timelimit:int=1, collect_coverage:bool=True):
         cls.testcases = testcases
         cls.timelimit = timelimit
+        cls.collect_coverage = collect_coverage
     
     @classmethod
     def clear_cache(cls):
@@ -92,12 +95,22 @@ class Tester:
         )
 
     @classmethod
-    def _run_test(cls, cmd:list[str], *, cwd:str, tc:TestCase, queue:Queue, compile_result:Result=None) -> None:
-        """Execute a test case and put the result in the queue."""
+    def _run_test(
+        cls,
+        cmd:list[str],
+        *,
+        cwd:str,
+        tc:TestCase,
+        compile_result:Result=None,
+        collect_coverage:bool=False,
+        coverage_source:str|None=None,
+        coverage_cwd:str|None=None,
+        env:dict|None=None
+    ) -> TestcaseResult:
+        """Execute a single test case."""
         # If compilation failed, reuse the compilation error for all test cases
         if compile_result is not None and compile_result.returncode != 0:
-            queue.put(TestcaseResult(testcase=tc, result=compile_result))
-            return
+            return TestcaseResult(testcase=tc, result=compile_result)
         
         status = stdout = stderr = ""
         returncode = -1
@@ -126,7 +139,8 @@ class Tester:
                 text=True,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                env=env
             )
             start = time.perf_counter()
             proc = psutil.Process(p.pid)
@@ -161,13 +175,16 @@ class Tester:
             exec_time=exec_time,
             mem_usage=mem_usage
         )
+
+        if collect_coverage and coverage_source:
+            cov_cwd = coverage_cwd if coverage_cwd else cwd
+            result.coverage = cls._collect_testcase_coverage(cov_cwd, coverage_source)
         
         # Check if test passed
         passed = cls.__is_equal(tc.output, result.stdout) and result.returncode == 0
         result.status = "passed" if passed else "failed"
         
-        # Put TestcaseResult in queue
-        queue.put(TestcaseResult(testcase=tc, result=result))
+        return TestcaseResult(testcase=tc, result=result)
 
     @classmethod
     def __is_equal(cls, expect:str, stdout:str) -> bool:
@@ -222,25 +239,145 @@ class Tester:
         
     
     @classmethod
-    def _validation(cls, compile_result:Result, exe:list, td:str) -> Results:
-        """Validate program by running all test cases in parallel."""
+    def _clear_coverage_artifacts(cls, cwd:str) -> None:
+        for pattern in ("*.gcda", "*.gcov"):
+            for path in glob.glob(os.path.join(cwd, pattern)):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+    @classmethod
+    def _collect_testcase_coverage(cls, cwd:str, coverage_source:str) -> list[int]:
+        cls._run_compile(["gcov", coverage_source], cwd=cwd)
+        gcov_path = os.path.join(cwd, f"{coverage_source}.gcov")
+        covered = cls._parse_gcov_covered_lines(gcov_path)
+        return sorted(covered)
+
+    @classmethod
+    def _run_test_worker(
+        cls,
+        cmd:list[str],
+        *,
+        cwd:str,
+        tc:TestCase,
+        queue:Queue,
+        compile_result:Result=None,
+        collect_coverage:bool=False,
+        coverage_source:str|None=None,
+        coverage_cwd:str|None=None,
+        env:dict|None=None
+    ) -> None:
+        tr = cls._run_test(
+            cmd,
+            cwd=cwd,
+            tc=tc,
+            compile_result=compile_result,
+            collect_coverage=collect_coverage,
+            coverage_source=coverage_source,
+            coverage_cwd=coverage_cwd,
+            env=env
+        )
+        queue.put(tr)
+
+    @classmethod
+    def _run_test_isolated_coverage_worker(
+        cls,
+        cmd:list[str],
+        *,
+        base_cwd:str,
+        tc:TestCase,
+        queue:Queue,
+        compile_result:Result,
+        coverage_source:str
+    ) -> None:
+        # If compilation failed, reuse the compilation error for all test cases
+        if compile_result is not None and compile_result.returncode != 0:
+            queue.put(TestcaseResult(testcase=tc, result=compile_result))
+            return
+
+        case_dir = tempfile.mkdtemp(prefix=f"tc_{tc.id}_", dir=base_cwd)
+        try:
+            # Prepare gcov inputs in testcase-local directory.
+            for name in os.listdir(base_cwd):
+                src = os.path.join(base_cwd, name)
+                if not os.path.isfile(src):
+                    continue
+                if name == coverage_source or name.endswith(".gcno"):
+                    shutil.copy2(src, os.path.join(case_dir, name))
+
+            # Redirect gcda emission to testcase-local directory.
+            strip = len([p for p in os.path.normpath(base_cwd).split(os.sep) if p])
+            run_env = os.environ.copy()
+            run_env["GCOV_PREFIX"] = case_dir
+            run_env["GCOV_PREFIX_STRIP"] = str(strip)
+
+            tr = cls._run_test(
+                cmd,
+                cwd=base_cwd,
+                tc=tc,
+                compile_result=compile_result,
+                collect_coverage=True,
+                coverage_source=coverage_source,
+                coverage_cwd=case_dir,
+                env=run_env
+            )
+            queue.put(tr)
+        finally:
+            shutil.rmtree(case_dir, ignore_errors=True)
+
+    @classmethod
+    def _validation(
+        cls,
+        compile_result:Result,
+        exe:list,
+        td:str,
+        collect_coverage:bool=False,
+        coverage_source:str|None=None
+    ) -> Results:
+        """Validate program by running all test cases with multiprocessing."""
+        if compile_result is not None and compile_result.returncode != 0:
+            results = [TestcaseResult(testcase=tc, result=compile_result) for tc in cls.testcases]
+            results.sort(key=lambda tr: tr.testcase.id)
+            return Results(results)
+
+        results = []
+        should_collect_coverage = bool(collect_coverage and coverage_source)
         queue = Queue()
         processes = []
-        
-        # Start a process for each test case
+
         for tc in cls.testcases:
-            p = Process(target=cls._run_test, args=(exe,), 
-                       kwargs={'cwd': td, 'tc': tc, 'queue': queue, 
-                              'compile_result': compile_result})
+            if should_collect_coverage:
+                p = Process(
+                    target=cls._run_test_isolated_coverage_worker,
+                    args=(exe,),
+                    kwargs={
+                        "base_cwd": td,
+                        "tc": tc,
+                        "queue": queue,
+                        "compile_result": compile_result,
+                        "coverage_source": coverage_source
+                    }
+                )
+            else:
+                p = Process(
+                    target=cls._run_test_worker,
+                    args=(exe,),
+                    kwargs={
+                        "cwd": td,
+                        "tc": tc,
+                        "queue": queue,
+                        "compile_result": compile_result,
+                        "collect_coverage": False,
+                        "coverage_source": None
+                    }
+                )
             p.start()
             processes.append(p)
-        
-        # Collect results from queue
-        results = []
+
         for _ in range(len(cls.testcases)):
             results.append(queue.get())
-        
-        # Wait for all processes to finish
+
         for p in processes:
             p.join()
         
@@ -248,6 +385,27 @@ class Tester:
         results.sort(key=lambda tr: tr.testcase.id)
         
         return Results(results)
+
+    @classmethod
+    def _parse_gcov_covered_lines(cls, gcov_path:str) -> set[int]:
+        covered = set()
+        if not os.path.isfile(gcov_path):
+            return covered
+        with open(gcov_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                parts = line.split(":", 2)
+                if len(parts) < 3:
+                    continue
+                count = parts[0].strip()
+                lineno = parts[1].strip()
+                if not lineno.isdigit():
+                    continue
+                if count in {"-", "#####", "====="}:
+                    continue
+                count = count.replace("*", "")
+                if count.isdigit() and int(count) > 0:
+                    covered.add(int(lineno))
+        return covered
 
     @classmethod
     def run_cpp(cls, program:Program):
@@ -268,8 +426,17 @@ class Tester:
             with open(src, "w", encoding="utf-8") as f:
                 f.write(program.code)
 
-            res = cls._run_compile(["gcc", "-O2", "-pipe", src, "-o", exe], cwd=td)
-            return cls._validation(res, [exe], td)
+            collect_coverage = getattr(cls, "collect_coverage", False)
+            if collect_coverage:
+                compile_cmd = ["gcc", "--coverage", "-O0", "-pipe", "main.c", "-o", "main"]
+            else:
+                compile_cmd = ["gcc", "-O2", "-pipe", src, "-o", exe]
+            res = cls._run_compile(compile_cmd, cwd=td)
+            return cls._validation(
+                res, [exe], td,
+                collect_coverage=collect_coverage,
+                coverage_source="main.c" if collect_coverage else None
+            )
             
     @classmethod
     def run_java(cls, program:Program):

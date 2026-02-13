@@ -25,4 +25,6 @@ class ETC:
     
     @staticmethod
     def normalize_code(code: str) -> str:
-        return "\n".join(ETC.normalize_lines(code))
+        # One-line normalization to ignore formatting-only differences
+        # (spaces, tabs, newlines) across generated variants.
+        return "".join(ETC.normalize_lines(code))

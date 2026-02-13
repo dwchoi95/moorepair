@@ -36,6 +36,7 @@ class Models:
                 max_tokens=cls.token_limit,
                 timeout=cls.timeout,
                 extra_body={
+                    "truncate_prompt_tokens": 16384,
                     "structured_outputs": {
                         "json": format.model_json_schema(),
                     }

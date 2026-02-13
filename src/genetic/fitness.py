@@ -5,8 +5,8 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
 
-from ..utils import TED, ETC
-from ..execution import Tester, Program, Programs
+from ..utils import DIST, ETC
+from ..execution import Tester, Program
 
 
 class Fitness:
@@ -19,11 +19,11 @@ class Fitness:
     F2: Correctness - Failed2Passed Test Cases
         버기 프로그램이 실패한 테스트 케이스와 참조 프로그램이 성공한 테스트 케이스 교집합 비율
         Range: [0, 1]
-    F3: Similarity - Line-level Edit Distance
-        두 프로그램의 라인 기반 편집 거리
-        Range: [0, inf]
-    F4: Similarity - AST-level Edit Distance
-        두 프로그램의 AST 기반 편집 거리 
+    F3: Similarity - Code Coverage Distance
+        두 프로그램의 코드 커버리지 거리
+        Range: [0, 1]
+    F4: Similarity - Tree Edit Distance
+        두 프로그램의 트리 편집 거리 
         Range: [0, inf]
     F5: Efficiency - Execution Time
         두 프로그램의 실행 시간 유사도
@@ -44,17 +44,17 @@ class Fitness:
             self.OBJECTIVES[5]: self.f6,
         }
         self.objectives = objectives
-        self.guidelines = {
-            "f1": "Preserve already-passing behavior; do not introduce regressions on previously passed test cases.",
-            "f2": "Fix behaviors that cause failing test cases; handle edge cases implied by the description.",
-            "f3": "Minimize the line-level edit distance from the Buggy Program; prefer small, localized edits.",
-            "f4": "Minimize the AST-level edit distance; avoid large refactoring unless necessary for correctness.",
-            "f5": "Reduce the execution time; prefer algorithmic simplifications and efficient data structures over micro-optimizations.",
-            "f6": "Reduce the memory usage; avoid unnecessary allocations and large auxiliary structures; reuse data when possible.",
+        self.strengths = {
+            "f1": "  - Passes the test cases that the Student Program passed.",
+            "f2": "  - Passes the test cases that the Student Program failed.",           
+            "f3": "  - Similar code coverage to the Student Program.",
+            "f4": "  - Low tree edit distance from the Student Program.",            
+            "f5": "  - Short execution time.",            
+            "f6": "  - Low memory usage.",
         }
 
     # [F1] Correctness - Passed2Passed Test Cases
-    def f1(self, buggy:Program, references:Programs) -> dict:
+    def f1(self, buggy:Program, references:list[Program]) -> dict:
         results = {}
         b_results = Tester.run(buggy)
         b_passed, b_failed = Tester.tests_split(b_results)
@@ -66,7 +66,7 @@ class Fitness:
         return results
     
     # [F2] Correctness - Failed2Passed Test Cases
-    def f2(self, buggy:Program, references:Programs) -> dict:
+    def f2(self, buggy:Program, references:list[Program]) -> dict:
         results = {}
         b_results = Tester.run(buggy)
         b_passed, b_failed = Tester.tests_split(b_results)
@@ -77,26 +77,30 @@ class Fitness:
             results[refer.id] = 1 - ETC.divide(len(intersect), len(b_results))
         return results
     
-    # [F3] Similarity - Line-level Edit Distance
-    def f3(self, buggy:Program, references:Programs) -> dict:
+    # [F3] Similarity - Code Coverage Distance
+    def f3(self, buggy:Program, references:list[Program]) -> dict:
         results = {}
-        ted = TED(buggy.ext)
+        b_results = Tester.run(buggy)
+        b_coverage = b_results.get_coverage_line()
+
         for refer in tqdm(references, desc="F3", leave=False):
-            results[refer.id] = ted.compute_levenshtein_led(
-                buggy.code, refer.code)
+            r_results = Tester.run(refer)
+            r_coverage = r_results.get_coverage_line()
+            results[refer.id] = DIST.compute_ccd(
+                b_coverage, r_coverage)
         return results
     
-    # [F4] Similarity - AST-level Edit Distance
-    def f4(self, buggy:Program, references:Programs) -> dict:
+    # [F4] Similarity - Tree Edit Distance
+    def f4(self, buggy:Program, references:list[Program]) -> dict:
         results = {}
-        ted = TED(buggy.ext)
+        DIST.set_language(buggy.ext)
         for refer in tqdm(references, desc="F4", leave=False):
-            results[refer.id] = ted.compute_levenshtein_ted(
+            results[refer.id] = DIST.compute_levenshtein_ted(
                 buggy.code, refer.code)
         return results
 
     # [F5] Efficiency - Execution Time
-    def f5(self, buggy:Program, references:Programs) -> dict:
+    def f5(self, buggy:Program, references:list[Program]) -> dict:
         results = {}
         for refer in tqdm(references, desc="F5", leave=False):
             refer_tests = Tester.run(refer)
@@ -104,14 +108,14 @@ class Fitness:
         return results
     
     # [F6] Efficiency - Memory Usage
-    def f6(self, buggy:Program, references:Programs) -> dict:
+    def f6(self, buggy:Program, references:list[Program]) -> dict:
         results = {}
         for refer in tqdm(references, desc="F6", leave=False):
             refer_tests = Tester.run(refer)
             results[refer.id] = refer_tests.mem_usage()
         return results
     
-    def evaluate(self, buggy:Program, references:Programs) -> dict[str, dict[str, float]]:
+    def evaluate(self, buggy:Program, references:list[Program]) -> dict[str, dict[str, float]]:
         scores = {obj: self.OBJ_FUNC_MAP[obj](buggy, references) 
                    for obj in self.objectives}
         X = np.array([[scores[o][r.id] for o in self.objectives] for r in references], dtype=float)
@@ -122,7 +126,7 @@ class Fitness:
             for i, r in enumerate(references)}
         return normalized
     
-    def run(self, buggy:Program, references:Programs) -> dict[str, list[float]]:
+    def run(self, buggy:Program, references:list[Program]) -> dict[str, list[float]]:
         normalized = self.evaluate(buggy, references)
         scores = {refer.id: [normalized[refer.id][obj] for obj in self.objectives]
                     for refer in references}
