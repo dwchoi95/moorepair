@@ -172,7 +172,7 @@ class Experiments:
             df = pd.concat([df, new_row], ignore_index=True)
         best_sol_path = os.path.join(results_dir, 'solutions', f'trial_{trial}.csv')
         os.makedirs(os.path.dirname(best_sol_path), exist_ok=True)
-        df.to_csv(best_sol_path, index=False, quoting=csv.QUOTE_ALL)
+        df.to_csv(best_sol_path, index=False)
 
     def __save_experiments(self, problemId: int) -> None:
         # per-problem summary path

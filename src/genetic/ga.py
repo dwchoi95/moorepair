@@ -74,11 +74,13 @@ class GeneticAlgorithm:
         early_stop = False
         solutions = []
         population = self._init_population(buggy, pop_size)
-        # for pop in population:
-        #     results = Tester.run(pop)
-        #     passed, failed = Tester.tests_split(results)
-        #     self.logger.info(f"POP: {pop.id} | passed: {len(passed)}, failed: {len(failed)}\n{pop.code}\n")
-        # exit()
+        for pop in population:
+            results = Tester.run(pop)
+            # passed, failed = Tester.tests_split(results)
+            # self.logger.info(f"POP: {pop.id} | passed: {len(passed)}, failed: {len(failed)}\n{pop.code}\n")
+            if not Tester.is_all_pass(results): continue
+            if self._is_uniq(pop, solutions):
+                solutions.append(pop)
 
         refer = self.references.get_prog_by_id(buggy.id)
         
@@ -162,6 +164,5 @@ class GeneticAlgorithm:
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
             results[buggy.id] = self._ga_run(buggy, generations, 
                 pop_size, selection, threshold)
-            break
         return results
     
