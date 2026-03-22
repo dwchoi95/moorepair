@@ -34,7 +34,8 @@ class BenchmarkVerifier:
             problemId, description, timelimit, memlimit, buggys, references, testcases = \
                 loader.run(path)
             Tester.init_globals(testcases, timelimit, memlimit)
-            pbar = tqdm(total=len(buggys)+len(references), desc=problemId)
+            tot = len(buggys)+len(references)
+            pbar = tqdm(total=tot, desc=problemId)
             mismatches = []
             stored = "failed"
             for bug in buggys:
@@ -53,7 +54,7 @@ class BenchmarkVerifier:
                 else:
                     mismatches.append(bug.id)
                 pbar.update(1)
-                pbar.set_postfix({"match": f"{pct(matched, total)}"})
+                pbar.set_postfix({"match": f"{pct(tot-len(mismatches), tot)}"})
 
             stored = "passed"
             for ref in references:
@@ -72,7 +73,7 @@ class BenchmarkVerifier:
                 else:
                     mismatches.append(ref.id)
                 pbar.update(1)
-                pbar.set_postfix({"match": f"{pct(matched, total)}"})
+                pbar.set_postfix({"match": f"{pct(tot-len(mismatches), tot)}"})
             pbar.close()
             
             # path에 있는 파일에 이어서 mismatch 기록

@@ -8,10 +8,10 @@ class Loader:
         self.sampling = sampling
         self.initialization = initialization
     
-    def run(self, problem:str) -> tuple[str, str, Programs, Programs, TestCases]:
+    def run(self, problem:str) -> tuple[str, str, int, int, Programs, Programs, TestCases]:
         dataset = json.loads(open(problem, 'r').read())
         assignment = dataset['assignment']
-        problemId = assignment['id']
+        problemId = assignment['id'].replace("/", "_")
         description = assignment['description']
         input_format = assignment['input_format']
         output_format = assignment['output_format']
@@ -36,9 +36,8 @@ class Loader:
         if self.sampling:
             sampler = Sampling(list(buggys))
             buggys = Programs(sampler.random())
-            # sampler = Sampling(references)
-            # references = sampler.random()
-            references = Programs([references.get_prog_by_id(buggy.id) for buggy in buggys])
+            sampler = Sampling(list(references))
+            references = Programs(sampler.random())
         
         if self.initialization:
             references = Programs()
