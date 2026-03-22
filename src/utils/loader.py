@@ -12,15 +12,25 @@ class Loader:
         dataset = json.loads(open(problem, 'r').read())
         assignment = dataset['assignment']
         problemId = assignment['id']
-        description = assignment['description'].replace('\n', '  \n')
+        description = assignment['description']
+        input_format = assignment['input_format']
+        output_format = assignment['output_format']
+        interaction_format = assignment['interaction_format']
+        note = assignment['note']
+        timelimit = int(assignment['time_limit'])
+        memlimit = int(assignment['memory_limit'])
+
         submissions = dataset['submissions']
+        mismatches = dataset.get('mismatches', [])
         references, buggys = Programs(), Programs()
         
         for sub in submissions:
-            if sub["status"] == "buggy": 
-                buggys.append(Program(
+            if sub["id"] in mismatches: continue
+            if sub["status"] == "OK": 
+                references.append(Program(
                     id=sub["id"], code=sub["code"], ext=sub["ext"]))
-            else: references.append(Program(
+            else:
+                buggys.append(Program(
                     id=sub["id"], code=sub["code"], ext=sub["ext"]))
         
         if self.sampling:
@@ -34,6 +44,16 @@ class Loader:
             references = Programs()
         
         testcases = TestCases(dataset['test_cases'])
-    
-        return problemId, description, buggys, references, testcases
+
+        description = f"Problem Description:\n{description}"
+        if input_format:
+            description += f"\n\nInput Format:\n{input_format}"
+        if output_format:
+            description += f"\n\nOutput Format:\n{output_format}"
+        if interaction_format:
+            description += f"\n\nInteraction Format:\n{interaction_format}"
+        if note:
+            description += f"\n\nNote:\n{note}"
+
+        return problemId, description, timelimit, memlimit, buggys, references, testcases
     
