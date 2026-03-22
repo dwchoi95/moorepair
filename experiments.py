@@ -3,7 +3,6 @@ import csv
 import shutil
 import pickle
 import time
-import math
 import pandas as pd
 from tqdm import tqdm
 from prettytable import PrettyTable
@@ -18,273 +17,196 @@ from src.execution import Tester, Program, Programs, TestCases
 
 class Experiments:
     def __init__(self,
-        generations:int=3, pop_size:int=10, initialization:bool=False,
-        selection:str="nsga3", threshold:float=0.5,
-        llm:str="codellama/CodeLlama-7b-Instruct-hf", 
-        temperature:float=0.8, timelimit:int=1,
-        objectives:list=Fitness.OBJECTIVES, trials:int=10,
-        sampling:bool=False, reset:bool=False,
-    ):  
-        self.loader = Loader(sampling, initialization)
-        
+        generations:int=10, pop_size:int=10,
+        llm:str="codellama/CodeLlama-7b-Instruct-hf",
+        temperature:float=0.8, sampling:bool=False, 
+        reset:bool=False,
+    ):
+        self.loader = Loader(sampling)
+
         self.generations = generations
         self.pop_size = pop_size
-        self.selection = selection
-        self.threshold = threshold
-        self.timelimit = timelimit
-        self.fitness = Fitness(objectives)
-        self.select = Selection(self.fitness)
         Models.set(model=llm, temperature=temperature)
         Tokenizer.set(llm)
-        self.trials = trials
         self.reset = reset
-        self.obj = "".join(objectives)
-        
-        self.evaluation_cols = [
-            "%RR", "%CCD", "%TED", 
-            "%ET", "%MEM"
-        ]
+
         self.results_cols = [
-            "#Trial", "#Gen", "#Refer", 
-            "#Buggy", "#Fixed"
-        ] + self.evaluation_cols
-        self.experiments_cols = [
-            "ProblemID", "Selection"
-        ] + self.results_cols
-    
-    def ratio(self, numerator: float, denominator: float) -> float:
-        if numerator == 0 or denominator == 0:
-            return 0.0
-        value = ETC.divide(numerator, denominator)
-        abs_value = abs(value)
-        decimal_places = max(3, -int(math.floor(math.log10(abs_value))))
-        return round(value, decimal_places)
-        
-    def __save_results(self, trial:int, problemId:int, 
-                       buggys:Programs, references:Programs, 
-                       results:dict[str, dict[int, list[Program]]]) -> None:
-        
-        # Save Results
-        results_dir = os.path.join('results', str(problemId), self.selection)
-        ## Save raw results
-        raw_results_path = os.path.join(results_dir, 'raw', f'trial_{trial}.pkl')
-        os.makedirs(os.path.dirname(raw_results_path), exist_ok=True)
-        with open(raw_results_path, 'wb') as f:
+            "#Gen", "#Buggy", "#Fixed",
+            "%RR", "%f_fail", "%f_time", "%f_mem",
+        ]
+        self.experiments_cols = ["ProblemID"] + self.results_cols
+
+    # ---------------------------------------------------------------- #
+    # Save results                                                     #
+    # ---------------------------------------------------------------- #
+
+    def __save_results(self, problemId:int, buggys:Programs, results:dict) -> None:
+        """results: {buggy_id: {gen: [Program, ...], ...}, ...}"""
+
+        results_dir = os.path.join('results', str(problemId))
+        raw_path = os.path.join(results_dir, 'raw.pkl')
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+        with open(raw_path, 'wb') as f:
             pickle.dump(results, f)
-        
-        final = []
-        generation_stats = {gen: { 'acc': 0, 'ccd': 0, 'ted': 0, 'et': 0, 'mem': 0 } 
-                            for gen in range(1, self.generations+1)}
+
+        generation_stats = {
+            gen: {'fixed': 0, 'f_fail': 0.0, 'f_time': 0.0, 'f_mem': 0.0}
+            for gen in range(1, self.generations + 1)
+        }
+        final_solutions = []
         table = PrettyTable(self.results_cols)
-        
-        for b_id, result in tqdm(results.items(), desc="Save", leave=False):
-            # No solution found
-            if not result: continue
-            
+
+        for b_id, gen_result in tqdm(results.items(), desc="Save", leave=False):
+            if not gen_result:
+                continue
             buggy = buggys.get_prog_by_id(b_id)
-            refer = references.get_prog_by_id(b_id)
-            
-            for gen in range(1, self.generations+1):
-                if gen not in result: continue
-                solutions = result[gen]
-                if not solutions: continue
-                
-                # Selection of best solution in this generation
-                patch = self.select.replacement(buggy, solutions, 1, "hype")[0]
-                
-                # Evaluation
-                union = solutions.copy()
-                union.append(refer)
-                scores = self.fitness.evaluate(buggy, union)
-                patch_score = scores[patch.id]
-                refer_score = scores[refer.id]
-                
-                ## accuracy
-                generation_stats[gen]['acc'] += 1
-                
-                ## similarity
-                ### Code Coverage Distance
-                refer_ccd = refer_score['f3']
-                patch_ccd = patch_score['f3']
-                generation_stats[gen]['ccd'] += self.ratio(
-                    (refer_ccd - patch_ccd), (refer_ccd + patch_ccd))
-                
-                ### AST-level Edit Distance
-                refer_ted = refer_score['f4']
-                patch_ted = patch_score['f4']
-                generation_stats[gen]['ted'] += self.ratio(
-                    (refer_ted - patch_ted), (refer_ted + patch_ted))
-                
-                ## efficiency
-                ### Execution Time
-                refer_time = refer_score['f5']
-                patch_time = patch_score['f5']
-                generation_stats[gen]['et'] += self.ratio(
-                    (refer_time - patch_time), (refer_time + patch_time))
-                
-                ### Memory Usage
-                refer_mem = refer_score['f6']
-                patch_mem = patch_score['f6']
-                generation_stats[gen]['mem'] += self.ratio(
-                    (refer_mem - patch_mem), (refer_mem + patch_mem))
-                
-                if gen == max(result.keys()):
-                    final.append((buggy, refer, patch))
-                         
+
+            for gen in range(1, self.generations + 1):
+                patches = gen_result.get(gen, [])
+                if not patches:
+                    continue
+                patch = Selection.prioritization(patches)
+                if patch.fitness["f_fail"] > 0:
+                    continue
+
+                generation_stats[gen]['fixed'] += 1
+
+                # Buggy baseline fitness
+                if buggy.fitness is None:
+                    Tester.run(buggy)
+                    Fitness.evaluate(buggy)
+                b_fail = buggy.fitness["f_fail"]
+                b_time = buggy.fitness["f_time"]
+                b_mem  = buggy.fitness["f_mem"]
+                p_time = patch.fitness["f_time"]
+                p_mem  = patch.fitness["f_mem"]
+
+                generation_stats[gen]['f_fail'] += patch.fitness["f_fail"]
+                generation_stats[gen]['f_time'] += ETC.divide(b_time - p_time, b_time + p_time)
+                generation_stats[gen]['f_mem']  += ETC.divide(b_mem  - p_mem,  b_mem  + p_mem)
+
+                if gen == max(gen_result.keys()):
+                    final_solutions.append((buggy, patch))
+
         total_bugs = len(buggys)
-        total_refs = len(references)
         for gen in sorted(generation_stats.keys()):
             stats = generation_stats[gen]
-            fixed = stats['acc']
+            fixed = stats['fixed']
             table.add_row([
-                trial,
                 gen,
-                total_refs,
                 total_bugs,
                 fixed,
                 f"{ETC.divide(fixed, total_bugs) * 100:.2f}%",
-                f"{ETC.divide(stats['ccd'], fixed) * 100:.2f}%",
-                f"{ETC.divide(stats['ted'], fixed) * 100:.2f}%",
-                f"{ETC.divide(stats['et'], fixed) * 100:.2f}%",
-                f"{ETC.divide(stats['mem'], fixed) * 100:.2f}%"
+                f"{ETC.divide(stats['f_fail'], max(fixed, 1)):.4f}",
+                f"{ETC.divide(stats['f_time'], max(fixed, 1)) * 100:.2f}%",
+                f"{ETC.divide(stats['f_mem'],  max(fixed, 1)) * 100:.2f}%",
             ])
-        
+
         print(table)
         summary_path = os.path.join(results_dir, 'summary.csv')
-        headers = table.field_names
-        rows = table._rows
         file_exists = os.path.exists(summary_path) and os.path.getsize(summary_path) > 0
         with open(summary_path, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(headers)
-            writer.writerows(rows)
-        
-        # Save Final Solutions
-        df = pd.DataFrame(columns=['ID', 'buggy', 'correct', 'patch'])
-        for buggy, refer, patch in final:
-            new_row = pd.DataFrame({
+                writer.writerow(table.field_names)
+            writer.writerows(table._rows)
+
+        # Save final solutions
+        df = pd.DataFrame(columns=['ID', 'buggy', 'patch'])
+        for buggy, patch in final_solutions:
+            df = pd.concat([df, pd.DataFrame({
                 'ID': [buggy.id],
                 'buggy': [buggy.code],
-                'correct': [refer.code],
-                'patch': [patch.code]
-            })
-            df = pd.concat([df, new_row], ignore_index=True)
-        best_sol_path = os.path.join(results_dir, 'solutions', f'trial_{trial}.csv')
-        os.makedirs(os.path.dirname(best_sol_path), exist_ok=True)
-        df.to_csv(best_sol_path, index=False)
+                'patch': [patch.code],
+            })], ignore_index=True)
+        sol_path = os.path.join(results_dir, 'solutions.csv')
+        os.makedirs(os.path.dirname(sol_path), exist_ok=True)
+        df.to_csv(sol_path, index=False)
 
-    def __save_experiments(self, problemId: int) -> None:
-        # per-problem summary path
-        results_dir = os.path.join('results', str(problemId), self.selection)
+    # ---------------------------------------------------------------- #
+    # Aggregate to overall.csv                                          #
+    # ---------------------------------------------------------------- #
+
+    def __save_experiments(self, problemId:int) -> None:
+        results_dir = os.path.join('results', str(problemId))
         summary_path = os.path.join(results_dir, 'summary.csv')
         if not os.path.exists(summary_path) or os.path.getsize(summary_path) == 0:
-            return  # nothing to aggregate
+            return
 
         df = pd.read_csv(summary_path)
-
-        for c in self.results_cols:
-            if c not in df.columns:
-                return
-
-        # Use only the final generation for each trial
         final_gen = int(df["#Gen"].max())
         dff = df[df["#Gen"] == final_gen].copy()
         if dff.empty:
             return
 
-        # Convert percentage strings to float
         def pct_to_float(x):
-            if pd.isna(x):
-                return 0.0
-            s = str(x).strip()
-            if s.endswith("%"):
-                s = s[:-1]
+            s = str(x).strip().rstrip("%")
             try:
                 return float(s)
             except ValueError:
                 return 0.0
-            
-        for c in self.evaluation_cols:
-            dff[c] = dff[c].apply(pct_to_float)
 
-        # Calculate averages (mean of rows per trial in the final generation)
-        # (Also average #Fixed to show "average number fixed")
-        total_refs = int(dff["#Refer"].iloc[0])
-        total_bugs = int(dff["#Buggy"].iloc[0])
-        mean_fixed = float(dff["#Fixed"].mean()) if len(dff) else 0.0
-        mean_acc = float(dff["%RR"].mean()) if len(dff) else 0.0
-        mean_sim_ccd = float(dff["%CCD"].mean()) if len(dff) else 0.0
-        mean_sim_ted = float(dff["%TED"].mean()) if len(dff) else 0.0
-        mean_time = float(dff["%ET"].mean()) if len(dff) else 0.0
-        mean_mem = float(dff["%MEM"].mean()) if len(dff) else 0.0
+        mean_rr       = dff["%RR"].apply(pct_to_float).mean()
+        mean_f_time   = dff["%f_time"].apply(pct_to_float).mean()
+        mean_f_mem    = dff["%f_mem"].apply(pct_to_float).mean()
+        total_bugs    = int(dff["#Buggy"].iloc[0])
+        mean_fixed    = float(dff["#Fixed"].mean())
 
-        # Save to overall results
         overall_path = os.path.join("results", "overall.csv")
         os.makedirs(os.path.dirname(overall_path), exist_ok=True)
-
         row = [
             problemId,
-            self.selection,
-            int(dff["#Trial"].nunique()),
             final_gen,
-            total_refs,
             total_bugs,
             f"{mean_fixed:.2f}",
-            f"{mean_acc:.2f}%",
-            f"{mean_sim_ccd:.2f}%",
-            f"{mean_sim_ted:.2f}%",
-            f"{mean_time:.2f}%",
-            f"{mean_mem:.2f}%",
+            f"{mean_rr:.2f}%",
+            f"{mean_f_time:.2f}%",
+            f"{mean_f_mem:.2f}%",
         ]
-
         file_exists = os.path.exists(overall_path) and os.path.getsize(overall_path) > 0
         with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             if not file_exists:
                 writer.writerow(self.experiments_cols)
             writer.writerow(row)
-        
 
-    def __core(self, trial:int, problemId:int, description:str,
-               buggys:Programs, references:Programs, testcases:TestCases):
-        # Skip if results already exist
-        raw_results_path = os.path.join(
-            'results', str(problemId), self.selection, 'raw', f'trial_{trial}.pkl')
-        if os.path.exists(raw_results_path):
-            with open(raw_results_path, 'rb') as f:
+    # ---------------------------------------------------------------- #
+    # Core logic                                                       #
+    # ---------------------------------------------------------------- #
+
+    def __core(self, problem:str):
+        problemId, description, \
+            timelimit, memlimit, \
+            buggys, references, testcases = \
+                self.loader.run(problem)
+        
+        raw_path = os.path.join('results', str(problemId), 'raw.pkl')
+        if os.path.exists(raw_path):
+            with open(raw_path, 'rb') as f:
                 results = pickle.load(f)
-            self.__save_results(
-                trial, problemId, buggys, references, results
-            )
+            self.__save_results(problemId, buggys, results)
             return
-    
-        # Generate Feedback
-        log_path = os.path.join('logs', str(problemId), self.selection, f'trial_{trial}.log')
-        Tester.init_globals(testcases, self.timelimit)
-        ga = GA(buggys, references, description, self.fitness, log_path)
-        # Run MooRepair
-        results = ga.run(self.generations, self.pop_size, 
-                            self.selection, self.threshold)
-        # Save Results
-        self.__save_results(
-            trial, problemId, buggys, references, results
-        )
-            
+
+        log_path = os.path.join('logs', f'{str(problemId)}.log')
+        
+        Tester.init_globals(testcases, timelimit, memlimit)
+        ga = GA(buggys, description, log_path)
+        results = ga.run(self.generations, self.pop_size)
+        self.__save_results(problemId, buggys, results)
+
+    # ---------------------------------------------------------------- #
+    # Public entry point                                                 #
+    # ---------------------------------------------------------------- #
+
     def run(self, problems:list):
-        experiments_path = os.path.join('results', 'overall.csv')
-        if os.path.isfile(experiments_path) and self.reset:
-            os.remove(experiments_path)
+        overall_path = os.path.join('results', 'overall.csv')
+        if os.path.isfile(overall_path) and self.reset:
+            os.remove(overall_path)
         for problem in problems:
-            problemId, description, buggys, \
-                references, testcases = self.loader.run(problem)
+            problemId = os.path.dirname(problem).split(os.sep)[-1]
             print(f"\n=== {problemId} ===")
-            results_dir = os.path.join('results', str(problemId), self.selection)
+            results_dir = os.path.join('results', str(problemId))
             if os.path.exists(results_dir) and self.reset:
                 shutil.rmtree(results_dir)
-            for trial in range(1, self.trials+1):
-                self.__core(
-                    trial, problemId, description,
-                    buggys, references, testcases
-                )
+            self.__core(problem)
             self.__save_experiments(problemId)

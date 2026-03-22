@@ -149,6 +149,7 @@ class Tester:
         cls.testcases = testcases
         cls.timelimit = float(timelimit)
         cls.memlimit = float(memlimit)
+        cls._run_cache.cache_clear()
 
     @classmethod
     def tests_split(cls, results: Results) -> tuple[set[TestCase], set[TestCase]]:

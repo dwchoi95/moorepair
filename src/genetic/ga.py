@@ -1,3 +1,4 @@
+import ast
 import logging
 from pathlib import Path
 from tqdm import tqdm
@@ -5,164 +6,156 @@ from tqdm import tqdm
 from .selection import Selection
 from .variation import Variation
 from .fitness import Fitness
-from ..execution import Programs, Program, Tester
+from ..execution import Program, Programs, Tester
 from ..utils import ETC
 
 
 class GeneticAlgorithm:
-    def __init__(self,
-        buggys:Programs,
-        references:Programs,
-        description:str,
-        fitness:Fitness=Fitness(),
-        log_path:str="logs/temp.log",
+    def __init__(
+        self,
+        buggys: Programs,
+        description: str,
+        log_path: str = "logs/temp.log",
     ):
         self.buggys = buggys
-        self.references = references
-        
-        self.fitness = fitness
-        self.select = Selection(fitness)
         self.variation = Variation(description)
         self._patch_uid = 0
-        
+
         log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         self.logger = logging.getLogger("GA")
         for h in self.logger.handlers[:]:
             self.logger.removeHandler(h)
             h.close()
         self.logger.setLevel(logging.INFO)
-        fh = logging.FileHandler(log_path, mode='w', encoding='utf-8')
+        fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
         fh.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(message)s')
-        fh.setFormatter(formatter)
+        fh.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
         self.logger.addHandler(fh)
         self.logger.propagate = False
+
+    # ---------------------------------------------------------------- #
+    # Helpers                                                          #
+    # ---------------------------------------------------------------- #
 
     def _assign_patch_id(self, patch: Program) -> None:
         self._patch_uid += 1
         patch.id = f"pop_{self._patch_uid}"
-    
-    def _is_uniq(self, new:Program, population:list[Program]) -> bool:
+
+    def _is_uniq(self, new: Program, population: list[Program]) -> bool:
         new_code = ETC.normalize_code(new.code)
-        for p in population:
-            old_code = ETC.normalize_code(p.code)
-            if old_code == new_code:
-                return False
-        return True
-    
-    def _init_population(self, buggy:Program, pop_size:int) -> list[Program]:
+        return all(ETC.normalize_code(p.code) != new_code for p in population)
+
+    @staticmethod
+    def _syntax_check(program: Program) -> bool:
+        if program.ext.lower() != "py":
+            return False
+        try:
+            ast.parse(program.code)
+            return True
+        except SyntaxError:
+            return False
+
+    # ---------------------------------------------------------------- #
+    # Initialization (syntax-check only, no test execution)            #
+    # ---------------------------------------------------------------- #
+
+    def _init_population(self, buggy: Program, pop_size: int) -> list[Program]:
         population = []
         tbar = tqdm(total=pop_size, desc="Population", position=1, leave=False)
         while len(population) < pop_size:
-            # Generate Patch
-            left_pop = pop_size - len(population)
-            programs = [None] * left_pop
-            patches = self.variation.run(buggy, programs)
-            for patch in patches:
-                if self._is_uniq(patch, population):
+            needed = pop_size - len(population)
+            candidates = self.variation.run_init(buggy, needed)
+            for patch in candidates:
+                if self._syntax_check(patch) and self._is_uniq(patch, population):
                     self._assign_patch_id(patch)
                     population.append(patch)
                     tbar.update(1)
         tbar.close()
         return population
-    
-    def _ga_run(self, buggy:Program, generations:int, 
-                pop_size:int, selection:str, threshold:float) -> dict:
-        result = {}
+
+    # ---------------------------------------------------------------- #
+    # Termination condition (EvoFix §9)                                #
+    # ---------------------------------------------------------------- #
+
+    def _termination(self, solutions: list[Program], b_fitness: dict) -> bool:
+        """Stop if any individual is fully correct AND faster AND lighter than buggy."""
         early_stop = False
+        b_fail = b_fitness["f_fail"]
+        b_time = b_fitness["f_time"]
+        b_mem  = b_fitness["f_mem"]
+
+        for i, s in enumerate(solutions):
+            s_fitness = Fitness.evaluate(s)
+            s_fail = s_fitness["f_fail"]
+            s_time = s_fitness["f_time"]
+            s_mem  = s_fitness["f_mem"]
+
+            log = f"Patch {i}: CORR: {s_fail:.2f} | RUN: {s_time:.2f} | MEM: {s_mem:.2f}"
+            
+            delta_fail = Selection.delta(b_fail, s_fail)
+            delta_time = Selection.delta(b_time, s_time)
+            delta_mem  = Selection.delta(b_mem,  s_mem)
+
+            if delta_fail == 1.0 and delta_time > 0 and delta_mem > 0:
+                log += f" >>> Early Stopped!"
+                early_stop = True
+            log += f"\n{s.code}\n"
+            self.logger.info(log)
+        return early_stop
+
+    # ---------------------------------------------------------------- #
+    # Per-buggy GA run                                                 #
+    # ---------------------------------------------------------------- #
+
+    def _ga_run(self, buggy: Program, generations: int, pop_size: int) -> dict:
+        result = {}
         solutions = []
+        buggy_fitness = Fitness.evaluate(buggy)
+        # Initialization
         population = self._init_population(buggy, pop_size)
         for pop in population:
             results = Tester.run(pop)
-            # passed, failed = Tester.tests_split(results)
-            # self.logger.info(f"POP: {pop.id} | passed: {len(passed)}, failed: {len(failed)}\n{pop.code}\n")
             if not Tester.is_all_pass(results): continue
             if self._is_uniq(pop, solutions):
                 solutions.append(pop)
 
-        refer = self.references.get_prog_by_id(buggy.id)
-        
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
-        for gen in tqdm(range(1, generations+1), desc="Generation", position=1, leave=False):
-            if early_stop: 
-                for remaining_gen in range(gen, generations+1):
-                    result.setdefault(remaining_gen, solutions.copy())
+        for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
+            if self._termination(solutions, buggy_fitness):
+                for remaining in range(gen, generations + 1):
+                    result.setdefault(remaining, solutions.copy())
                 break
             result.setdefault(gen, solutions.copy())
             self.logger.info(f"=== Generation {gen} ===")
-            
+
             # Selection
-            parents = self.select.pairs(buggy, population)
-            
-            # LLM-guided Variation
-            childs = self.variation.run(buggy, parents)
-            
+            pairs = Selection.run(population, pop_size)
+
+            # Variation
+            offspring = self.variation.run(buggy, pairs)
+
             # Validation
-            for child in tqdm(childs, desc="Validation", position=2, leave=False):
-                ## Update Population
-                if self._is_uniq(child, population):
+            for child in offspring:
+                if self._syntax_check(child) and self._is_uniq(child, population):
                     self._assign_patch_id(child)
                     population.append(child)
                 else: continue
                 
-                ## Update Solutions
                 results = Tester.run(child)
                 if not Tester.is_all_pass(results): continue
                 if self._is_uniq(child, solutions):
                     solutions.append(child)
-            
-            # Early Stop Criterion Check
-            progs = solutions.copy()
-            progs.append(refer)
-            scores = self.fitness.evaluate(buggy, progs)
-            for i, patch in tqdm(enumerate(solutions, start=1), desc="Evaluation", position=2, leave=False):
-                refer_score = scores[refer.id]
-                patch_score = scores[patch.id]
-                
-                ## Similarity
-                ### Code Coverage Distance
-                refer_ccd = refer_score['f3']
-                patch_ccd = patch_score['f3']
-                ccd = ETC.divide(
-                    (refer_ccd - patch_ccd), (refer_ccd + patch_ccd))
-                ### Tree Edit Distance
-                refer_ted = refer_score['f4']
-                patch_ted = patch_score['f4']
-                ted = ETC.divide(
-                    (refer_ted - patch_ted), (refer_ted + patch_ted))
-                
-                ## Efficiency
-                ### Execution Time
-                refer_time = refer_score['f5']
-                patch_time = patch_score['f5']
-                exec_time = ETC.divide(
-                    (refer_time - patch_time), (refer_time + patch_time))
-                ## Memory Usage
-                refer_mem = refer_score['f6']
-                patch_mem = patch_score['f6']
-                mem_usage = ETC.divide(
-                    (refer_mem - patch_mem), (refer_mem + patch_mem))
-                
-                log = f"Patch {i}: CCD: {ccd:.2f} | TED: {ted:.2f} | ET: {exec_time:.2f} | MEM: {mem_usage:.2f}"
-                mean = ETC.divide(ccd + ted + exec_time + mem_usage, 4)
-                if mean >= threshold:
-                    early_stop = True
-                    log += f" >>> Early Stopped!"
-                log += f"\n{patch.code}\n"
-                self.logger.info(log)
 
-            # Replacement
-            population = self.select.replacement(buggy, population, pop_size, selection)
-            
         return result
-        
-    def run(self, generations:int=3, pop_size:int=10, 
-            selection:str="nsga3", threshold:float=0.5) -> dict:
+
+    # ---------------------------------------------------------------- #
+    # Public entry point                                               #
+    # ---------------------------------------------------------------- #
+
+    def run(self, generations: int = 10, pop_size: int = 10) -> dict:
         results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
-            results[buggy.id] = self._ga_run(buggy, generations, 
-                pop_size, selection, threshold)
+            results[buggy.id] = self._ga_run(buggy, generations, pop_size)
         return results
-    

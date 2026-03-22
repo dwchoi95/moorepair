@@ -150,3 +150,10 @@ data/
 TODO.md
 results/
 logs/
+CodeNet/
+CLAUDE.md
+EvoFix.md
+.claude/
+baselines/
+.github/
+test.ipynb

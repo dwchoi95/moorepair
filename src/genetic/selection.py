@@ -1,129 +1,308 @@
+import random
+import statistics
+
 import numpy as np
-from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga2 import NSGA2
-from pymoo.algorithms.moo.nsga3 import NSGA3
 from pymoo.core.population import Population
-from pymoo.indicators.hv import HV
 
-from .fitness import Fitness
-from ..utils import Randoms
-from ..execution import Program
+from ..execution.program import Program
+from ..execution.testcases import TestCase
+from ..execution.tester import Status
 
-
-SELECTIONS = ["none", "random", "nsga2", "nsga3", "hype", "hier"]
 
 class Selection:
-    def __init__(self, fitness:Fitness):
-        self.fitness = fitness
-    
-    def random(self, scores:dict, pop_size:int) -> list:
-        return Randoms.sample(list(scores.keys()), pop_size)
-    
-    def nsga2(self, scores:dict, pop_size:int) -> list:
-        keys = list(scores.keys())
-        m = len(scores[keys[0]])
-        F = np.array([scores[k] for k in keys], dtype=float)
-        # F = -F # if maximize use -F to convert to minimize
+    """EvoFix three-step selection.
+
+    Step 1 – survivor_selection: NSGA-II on (f_fail, f_time, f_mem)
+    Step 2 – assign_strategies:  SUS based on per-objective improvement rates
+    Step 3 – build_pairs:        complementarity-based rank sampling → (p1, p2, t*)
+    """
+
+    STRATEGIES = ["f_fail", "f_time", "f_mem"]
+
+    @classmethod
+    def delta(cls,before: float, after: float) -> float:
+        """Improvement rate ∈ [-1, 1]; 0 when denominator is zero."""
+        denom = before + after
+        if denom == 0.0:
+            return 0.0
+        return (before - after) / denom
+
+    # ------------------------------------------------------------------ #
+    # Step 1: Survivor Selection (NSGA-II)                               #
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def survivor_selection(cls, population: list[Program], pop_size: int) -> list[Program]:
+        """Keep *pop_size* individuals using NSGA-II Pareto ranking + crowding distance."""
+        if len(population) <= pop_size:
+            return population
+
+        keys = [p.id for p in population]
+        F = np.array(
+            [
+                [
+                    p.fitness["f_fail"],
+                    p.fitness["f_time"],
+                    p.fitness["f_mem"],
+                ]
+                for p in population
+            ],
+            dtype=float,
+        )
 
         X = np.zeros((len(keys), 1))
-        pop = Population.new("X", X, "F", F)
-        pop.set("key", np.array(keys, dtype=object))
-        problem = Problem(n_var=1, n_obj=m, xl=np.array([0.0]), xu=np.array([1.0]))
+        pop_pymoo = Population.new("X", X, "F", F)
+        pop_pymoo.set("key", np.array(keys, dtype=object))
+        problem = Problem(n_var=1, n_obj=3, xl=np.array([0.0]), xu=np.array([1.0]))
 
         algo = NSGA2(pop_size=pop_size)
-        n_survive = min(pop_size, len(pop))
-        survivors = algo.survival.do(problem, pop, n_survive=n_survive)
+        n_survive = min(pop_size, len(pop_pymoo))
+        survivors = algo.survival.do(problem, pop_pymoo, n_survive=n_survive)
+        selected_ids = set(survivors.get("key").tolist())
 
-        return survivors.get("key").tolist()
-    
-    def nsga3(self, scores:dict, pop_size:int) -> list:
-        keys = list(scores.keys())
-        m = len(scores[keys[0]])
-        F = np.array([scores[k] for k in keys], dtype=float)
-        # F = -F # if maximize use -F to convert to minimize
+        return [p for p in population if p.id in selected_ids]
 
-        X = np.zeros((len(keys), 1))
-        pop = Population.new("X", X, "F", F)
-        pop.set("key", np.array(keys, dtype=object))
-        problem = Problem(n_var=1, n_obj=m, xl=np.array([0.0]), xu=np.array([1.0]))
+    # ------------------------------------------------------------------ #
+    # Step 2: Edit Action (Strategy) Selection via SUS                   #
+    # ------------------------------------------------------------------ #
 
-        ref_dirs = get_reference_directions("energy", m, m)
-        algo = NSGA3(ref_dirs=ref_dirs)
-        n_survive = min(pop_size, len(pop))
-        survivors = algo.survival.do(problem, pop, n_survive=n_survive)
+    @classmethod
+    def assign_strategies(cls, population: list[Program]) -> None:
+        """Assign p.strategy to each individual using SUS on improvement rates."""
+        for p in population:
+            if p.prev_fitness is None:
+                # First generation: uniform weights
+                weights = [1.0, 1.0, 1.0]
+            else:
+                pf = p.prev_fitness
+                cf = p.fitness
 
-        return survivors.get("key").tolist()
-    
-    def hype(self, scores:dict, pop_size:int=1) -> list | str:
-        hv_values = {}
-        for key, value in scores.items():
-            x = np.array(value, dtype=float)
-            ref = np.ones(len(value), dtype=float)
-            hv = HV(ref_point=ref)
-            hv_values[key] = float(hv(x.reshape(1, -1)))
-        sorted_keys = sorted(hv_values, key=hv_values.get, reverse=True)
-        return sorted_keys[:pop_size] if pop_size > 1 else sorted_keys[0]
-    
-    def hierarchical(self, scores:dict, pop_size:int) -> list:
-        sorted_programs = sorted(
-            scores.keys(),
-            key=lambda prog: (
-                scores[prog][0] + scores[prog][1], # f1 + f2
-                scores[prog][2] + scores[prog][3], # f3 + f4
-                scores[prog][4] + scores[prog][5]  # f5 + f6
-            )
-        )
-        return sorted_programs[:pop_size]
-    
-    def replacement(self, buggy:Program, references:list[Program], pop_size:int, selection:str="nsga3") -> list[Program]:
-        # Fitness Evaluation
-        scores = self.fitness.run(buggy, references)
-        
-        # Selection
-        if selection == "none":
-            return [buggy] * pop_size
-        elif selection == "random":
-            selected = self.random(scores, pop_size)
-        elif selection == "nsga2":
-            selected = self.nsga2(scores, pop_size)
-        elif selection == "nsga3":
-            selected = self.nsga3(scores, pop_size)
-        elif selection == "hype":
-            selected = self.hype(scores, pop_size)
-        elif selection == "hier":
-            selected = self.hierarchical(scores, pop_size)
-        else:
-            raise ValueError(f"Invalid selection method: {selection}. Choose from {SELECTIONS}.")
-        
-        programs = [refer for refer in references if refer.id in selected]
-        return programs
-    
-    def __get_prog_by_id(self, p_id:str, programs:list[Program]) -> Program:
-        for p in programs:
-            if p.id == p_id:
-                return p
-        raise IndexError
-        
-    def pairs(self, buggy:Program, population:list[Program]) -> list:
-        if population[0] is None:
-            return population
-        normalized = self.fitness.evaluate(buggy, population)
-        obj_sorted_asc = {
-            obj: sorted(normalized.keys(),
-                        key=lambda ind: normalized[ind][obj])
-            for obj in self.fitness.objectives
-        }
-        parents = []
-        for ind_id, scores in normalized.items():
-            parent1 = self.__get_prog_by_id(ind_id, population)
-            max_obj = max(scores, key=scores.get)
-            min_obj = min(scores, key=scores.get)
-            strengths1 = self.fitness.strengths[min_obj]
-            strengths2 = self.fitness.strengths[max_obj]
-            for cand_id in obj_sorted_asc[max_obj]:
-                if cand_id != ind_id:
-                    parent2 = self.__get_prog_by_id(cand_id, population)
-                    parents.append((parent1, parent2, strengths1, strengths2))
+                def safe(key: str) -> float:
+                    b = pf[key]
+                    a = cf[key]
+                    return cls.delta(b, a)
+
+                delta_fail = safe("f_fail")
+                delta_time = safe("f_time")
+                delta_mem  = safe("f_mem")
+                weights = [
+                    max(delta_fail + 1.0, 0.0),
+                    max(delta_time + 1.0, 0.0),
+                    max(delta_mem  + 1.0, 0.0),
+                ]
+
+            total = sum(weights)
+            if total == 0.0:
+                weights = [1.0, 1.0, 1.0]
+                total = 3.0
+
+            # SUS: single pointer
+            pointer = random.uniform(0, total)
+            cumulative = 0.0
+            chosen = Selection.STRATEGIES[0]
+            for strategy, w in zip(Selection.STRATEGIES, weights):
+                cumulative += w
+                if pointer <= cumulative:
+                    chosen = strategy
                     break
-        return parents
+            p.strategy = chosen
+
+    # ------------------------------------------------------------------ #
+    # Step 3: Parent Selection via Complementarity                       #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _compute_thresholds(population: list[Program]) -> tuple[float, float]:
+        """θ_time and θ_mem as population-wide median (per test case)."""
+        times, mems = [], []
+        for p in population:
+            if p.results is None:
+                continue
+            for tr in p.results:
+                if tr.result:
+                    times.append(tr.result.runtime)
+                    mems.append(tr.result.memory)
+        theta_time = statistics.median(times) if times else 0.0
+        theta_mem  = statistics.median(mems)  if mems  else 0.0
+        return theta_time, theta_mem
+
+    @staticmethod
+    def _weakness_set(
+       p: Program, strategy: str, theta_time: float, theta_mem: float
+    ) -> set:
+        """S1: test cases where p is weak according to strategy."""
+        if p.results is None:
+            return set()
+        s1 = set()
+        for tr in p.results:
+            if tr.result is None:
+                continue
+            tc = tr.testcase
+            if strategy == "f_fail" and tr.result.status != Status.PASSED:
+                s1.add(tc.id)
+            elif strategy == "f_time" and tr.result.runtime > theta_time:
+                s1.add(tc.id)
+            elif strategy == "f_mem" and tr.result.memory > theta_mem:
+                s1.add(tc.id)
+        return s1
+
+    def _strength_set(
+        self, p: Program, strategy: str, theta_time: float, theta_mem: float
+    ) -> set:
+        """S2: test cases where p is strong according to strategy."""
+        if p.results is None:
+            return set()
+        s2 = set()
+        for tr in p.results:
+            if tr.result is None:
+                continue
+            tc = tr.testcase
+            if strategy == "f_fail" and tr.result.status == Status.PASSED:
+                s2.add(tc.id)
+            elif strategy == "f_time" and tr.result.runtime <= theta_time:
+                s2.add(tc.id)
+            elif strategy == "f_mem" and tr.result.memory <= theta_mem:
+                s2.add(tc.id)
+        return s2
+
+    def _complementarity(
+        self,
+        p1: Program,
+        p2: Program,
+        strategy: str,
+        theta_time: float,
+        theta_mem: float,
+    ) -> float:
+        """Fraction of p1's weakness test cases that p2 handles well."""
+        s1 = self._weakness_set(p1, strategy, theta_time, theta_mem)
+        if not s1:
+            return 0.0
+        s2 = self._strength_set(p2, strategy, theta_time, theta_mem)
+        return len(s1 & s2) / len(s1)
+
+    def _representative_testcase(
+        self,
+        p1: Program,
+        p2: Program,
+        strategy: str,
+        theta_time: float,
+        theta_mem: float,
+    ) -> TestCase | None:
+        """Select t* from S1 ∩ S2; None if intersection is empty."""
+        s1 = self._weakness_set(p1, strategy, theta_time, theta_mem)
+        s2 = self._strength_set(p2, strategy, theta_time, theta_mem)
+        overlap_ids = s1 & s2
+        if not overlap_ids:
+            return None
+
+        # Build lookup for p1 test results by tc id
+        p1_by_id = {tr.testcase.id: tr for tr in p1.results if tr.result}
+        p2_by_id = {tr.testcase.id: tr for tr in p2.results if tr.result}
+
+        if strategy == "f_fail":
+            tc_id = random.choice(list(overlap_ids))
+            return p1_by_id[tc_id].testcase
+
+        # For f_time / f_mem pick the test case with the largest difference
+        best_id = max(
+            overlap_ids,
+            key=lambda tid: (
+                (p1_by_id[tid].result.runtime - p2_by_id[tid].result.runtime)
+                if strategy == "f_time"
+                else (p1_by_id[tid].result.memory - p2_by_id[tid].result.memory)
+            ),
+        )
+        return p1_by_id[best_id].testcase
+
+    def build_pairs(
+        self, population: list[Program]
+    ) -> list[tuple[Program, Program, TestCase | None]]:
+        """Build (p1, p2, t*) pairs using complementarity rank sampling."""
+        theta_time, theta_mem = self._compute_thresholds(population)
+        pairs = []
+        n = len(population)
+
+        for p1 in population:
+            strategy = p1.strategy or "f_fail"
+            candidates = [p for p in population if p.id != p1.id]
+            if not candidates:
+                continue
+
+            # Score each candidate by complementarity
+            scores = [
+                self._complementarity(p1, p2, strategy, theta_time, theta_mem)
+                for p2 in candidates
+            ]
+
+            # Rank-based weights (rank 1 = highest complementarity)
+            order = sorted(range(len(candidates)), key=lambda i: -scores[i])
+            weights = [0.0] * len(candidates)
+            for rank, idx in enumerate(order):
+                weights[idx] = n - rank  # rank 1 → weight n
+
+            total_w = sum(weights)
+            if total_w == 0.0:
+                p2 = random.choice(candidates)
+            else:
+                r = random.uniform(0, total_w)
+                cumulative = 0.0
+                p2 = candidates[-1]
+                for p, w in zip(candidates, weights):
+                    cumulative += w
+                    if r <= cumulative:
+                        p2 = p
+                        break
+
+            t_star = self._representative_testcase(p1, p2, strategy, theta_time, theta_mem)
+            pairs.append((p1, p2, t_star))
+
+        return pairs
+    
+    def run(self, population: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
+        """Run the full selection process and return (p1, p2, t*) pairs."""
+        population = self.survivor_selection(population, pop_size)
+        self.assign_strategies(population)
+        return self.build_pairs(population)
+    
+    # ---------------------------------------------------------------- #
+    # Final solution selection (EvoFix §9)                             #
+    # ---------------------------------------------------------------- #
+
+    @classmethod
+    def prioritization(cls, population: list[Program]) -> Program | None:
+        """From P_c (f_fail=0) pick Pareto-optimal by crowding distance on f_time+f_mem."""
+        P_c = [p for p in population if p.fitness and p.fitness["f_fail"] == 0.0]
+        if not P_c:
+            # Fallback: return individual with lowest f_fail
+            valid = [p for p in population if p.fitness is not None]
+            if not valid:
+                return None
+            return min(valid, key=lambda p: p.fitness["f_fail"])
+
+        if len(P_c) == 1:
+            return P_c[0]
+
+        # Build F matrix for (f_time, f_mem)
+        f_time_vals = [p.fitness["f_time"] for p in P_c]
+        f_mem_vals  = [p.fitness["f_mem"] for p in P_c]
+        F = np.array(list(zip(f_time_vals, f_mem_vals)), dtype=float)
+
+        X = np.zeros((len(P_c), 1))
+        pop_pymoo = Population.new("X", X, "F", F)
+        pop_pymoo.set("key", np.arange(len(P_c)))
+        problem = Problem(n_var=1, n_obj=2, xl=np.array([0.0]), xu=np.array([1.0]))
+
+        algo = NSGA2(pop_size=len(P_c))
+        survivors = algo.survival.do(problem, pop_pymoo, n_survive=len(P_c))
+
+        # crowding distances stored by pymoo in "crowding" attribute
+        try:
+            cd = survivors.get("crowding")
+            idx = int(np.argmax(cd))
+            selected_key = int(survivors.get("key")[idx])
+        except Exception:
+            selected_key = int(survivors.get("key")[0])
+
+        return P_c[selected_key]

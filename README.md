@@ -34,6 +34,11 @@ data.zip : The dataset from Refactory and AssignmentMender.
    ```bash
    unzip data.zip
    ```
+4. Serve vllm
+
+   ```bash
+   vllm serve [model]
+   ```
 
 ## How to Run
 

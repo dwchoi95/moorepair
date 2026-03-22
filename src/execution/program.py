@@ -7,9 +7,11 @@ class Program:
     id:str = field(metadata={"desc":"Unique identifier for the program"})
     code:str = field(metadata={"desc":"Source code of the program"})
     ext:str = field(metadata={"desc":"File extension indicating the programming language"})
-    method:str = field(default=None, metadata={"desc":"Method Name (for Java/C# programs)"})
     results:Results = field(default=None, metadata={"desc":"Run Results after execution"})
     meta:dict = field(default_factory=dict, metadata={"desc":"Additional metadata"})
+    fitness:dict = field(default=None, metadata={"desc":"Current fitness {f_fail, f_time, f_mem}"})
+    prev_fitness:dict = field(default=None, metadata={"desc":"Previous generation fitness for Δ calculation"})
+    strategy:str = field(default=None, metadata={"desc":"Edit strategy assigned by SUS: f_fail | f_time | f_mem"})
     
     def __hash__(self):
         from ..utils import ETC
@@ -51,6 +53,9 @@ class Programs:
         if isinstance(idx, slice):
             return Programs(self.programs[idx])
         return self.programs[idx]
+    
+    def __add__(self, other: 'Programs') -> 'Programs':
+        return Programs(self.programs + other.programs)
     
     def __print(self, prog:Program) -> str:
         return f'```{prog.ext}\n{prog.code}\n```'

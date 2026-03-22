@@ -10,10 +10,9 @@ class Result:
     status:str = field(metadata={"desc":"Status of the execution (e.g., passed, failed, timeout, error)"})
     stdout:str = field(metadata={"desc":"Standard output from the execution"})
     stderr:str = field(metadata={"desc":"Standard error from the execution"})
-    returncode:int = field(metadata={"desc":"Return code from the execution"})
-    exec_time:float = field(default=0.0, metadata={"desc":"Execution time in seconds"})
-    mem_usage:float = field(default=0.0, metadata={"desc":"Memory usage in megabytes"})
-    coverage:list[int] = field(default_factory=list, metadata={"desc":"Covered source line numbers for this testcase"})
+    runtime:float = field(default=0.0, metadata={"desc":"Execution time in seconds"})
+    memory:float = field(default=0.0, metadata={"desc":"Memory usage in megabytes"})
+    coverage:dict = field(default_factory=dict, metadata={"desc":"Line-level profile: {lineno: {hits, runtime, memory}}"})
 
 @dataclass
 class TestcaseResult:
@@ -74,16 +73,24 @@ class Results:
     def exec_time(self) -> float:
         total_exec_time = []
         for tr in self.ts:
-            total_exec_time.append(tr.result.exec_time)
+            total_exec_time.append(tr.result.runtime)
         score = sum(total_exec_time)
         return score
-    
+
+    def exec_time_max(self) -> float:
+        times = [tr.result.runtime for tr in self.ts if tr.result]
+        return max(times) if times else 0.0
+
     def mem_usage(self) -> float:
         total_mem_usage = []
         for tr in self.ts:
-            total_mem_usage.append(tr.result.mem_usage)
+            total_mem_usage.append(tr.result.memory)
         score = sum(total_mem_usage)
         return score
+
+    def mem_usage_max(self) -> float:
+        mems = [tr.result.memory for tr in self.ts if tr.result]
+        return max(mems) if mems else 0.0
     
     def coverage(self) -> set:
         cov = list()

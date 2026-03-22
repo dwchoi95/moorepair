@@ -165,12 +165,12 @@ class Distance:
 class TEDTest:
     @staticmethod
     def run(code1, code2):
-        TED.set_language(language='c')
-        distance = TED.compute_ted(code1, code2)
+        Distance.set_language(language='c')
+        distance = Distance.compute_ted(code1, code2)
         print(f"TED Distance: {distance}")
-        similarity = TED.compute_sim(code1, code2)
+        similarity = Distance.compute_sim(code1, code2)
         print(f"TED Similarity: {similarity}")
-        rps = TED.relative_patch_size(code1, code2)
+        rps = Distance.relative_patch_size(code1, code2)
         print(f"TED RPS: {rps}")
-        lcs = TED.compute_levenshtein_ted(code1, code2)
+        lcs = Distance.compute_levenshtein_ted(code1, code2)
         print(f"Levenshtein-based TED Distance: {lcs}")
