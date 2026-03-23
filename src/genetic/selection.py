@@ -69,45 +69,44 @@ class Selection:
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def assign_strategies(cls, population: list[Program]) -> None:
+    def assign_strategy(cls, p: Program):
         """Assign p.strategy to each individual using SUS on improvement rates."""
-        for p in population:
-            if p.prev_fitness is None:
-                # First generation: uniform weights
-                weights = [1.0, 1.0, 1.0]
-            else:
-                pf = p.prev_fitness
-                cf = p.fitness
+        if p.prev_fitness is None:
+            # First generation: uniform weights
+            weights = [1.0, 1.0, 1.0]
+        else:
+            pf = p.prev_fitness
+            cf = p.fitness
 
-                def safe(key: str) -> float:
-                    b = pf[key]
-                    a = cf[key]
-                    return cls.delta(b, a)
+            def safe(key: str) -> float:
+                b = pf[key]
+                a = cf[key]
+                return cls.delta(b, a)
 
-                delta_fail = safe("f_fail")
-                delta_time = safe("f_time")
-                delta_mem  = safe("f_mem")
-                weights = [
-                    max(delta_fail + 1.0, 0.0),
-                    max(delta_time + 1.0, 0.0),
-                    max(delta_mem  + 1.0, 0.0),
-                ]
+            delta_fail = safe("f_fail")
+            delta_time = safe("f_time")
+            delta_mem  = safe("f_mem")
+            weights = [
+                max(delta_fail + 1.0, 0.0),
+                max(delta_time + 1.0, 0.0),
+                max(delta_mem  + 1.0, 0.0),
+            ]
 
-            total = sum(weights)
-            if total == 0.0:
-                weights = [1.0, 1.0, 1.0]
-                total = 3.0
+        total = sum(weights)
+        if total == 0.0:
+            weights = [1.0, 1.0, 1.0]
+            total = 3.0
 
-            # SUS: single pointer
-            pointer = random.uniform(0, total)
-            cumulative = 0.0
-            chosen = Selection.STRATEGIES[0]
-            for strategy, w in zip(Selection.STRATEGIES, weights):
-                cumulative += w
-                if pointer <= cumulative:
-                    chosen = strategy
-                    break
-            p.strategy = chosen
+        # SUS: single pointer
+        pointer = random.uniform(0, total)
+        cumulative = 0.0
+        chosen = Selection.STRATEGIES[0]
+        for strategy, w in zip(Selection.STRATEGIES, weights):
+            cumulative += w
+            if pointer <= cumulative:
+                chosen = strategy
+                break
+        p.strategy = chosen
 
     # ------------------------------------------------------------------ #
     # Step 3: Parent Selection via Complementarity                       #
@@ -149,7 +148,7 @@ class Selection:
         return s1
 
     def _strength_set(
-        self, p: Program, strategy: str, theta_time: float, theta_mem: float
+        cls, p: Program, strategy: str, theta_time: float, theta_mem: float
     ) -> set:
         """S2: test cases where p is strong according to strategy."""
         if p.results is None:
@@ -168,7 +167,7 @@ class Selection:
         return s2
 
     def _complementarity(
-        self,
+        cls,
         p1: Program,
         p2: Program,
         strategy: str,
@@ -176,14 +175,14 @@ class Selection:
         theta_mem: float,
     ) -> float:
         """Fraction of p1's weakness test cases that p2 handles well."""
-        s1 = self._weakness_set(p1, strategy, theta_time, theta_mem)
+        s1 = cls._weakness_set(p1, strategy, theta_time, theta_mem)
         if not s1:
             return 0.0
-        s2 = self._strength_set(p2, strategy, theta_time, theta_mem)
+        s2 = cls._strength_set(p2, strategy, theta_time, theta_mem)
         return len(s1 & s2) / len(s1)
 
     def _representative_testcase(
-        self,
+        cls,
         p1: Program,
         p2: Program,
         strategy: str,
@@ -191,8 +190,8 @@ class Selection:
         theta_mem: float,
     ) -> TestCase | None:
         """Select t* from S1 ∩ S2; None if intersection is empty."""
-        s1 = self._weakness_set(p1, strategy, theta_time, theta_mem)
-        s2 = self._strength_set(p2, strategy, theta_time, theta_mem)
+        s1 = cls._weakness_set(p1, strategy, theta_time, theta_mem)
+        s2 = cls._strength_set(p2, strategy, theta_time, theta_mem)
         overlap_ids = s1 & s2
         if not overlap_ids:
             return None
@@ -215,12 +214,39 @@ class Selection:
             ),
         )
         return p1_by_id[best_id].testcase
+    
+    def _get_pair(cls, p1: Program, candidates: list[Program], strategy: str, theta_time: float, theta_mem: float, n: int) -> Program:
+        # Score each candidate by complementarity
+        scores = [
+            cls._complementarity(p1, p2, strategy, theta_time, theta_mem)
+            for p2 in candidates
+        ]
+
+        # Rank-based weights (rank 1 = highest complementarity)
+        order = sorted(range(len(candidates)), key=lambda i: -scores[i])
+        weights = [0.0] * len(candidates)
+        for rank, idx in enumerate(order):
+            weights[idx] = n - rank  # rank 1 → weight n
+
+        total_w = sum(weights)
+        if total_w == 0.0:
+            p2 = random.choice(candidates)
+        else:
+            r = random.uniform(0, total_w)
+            cumulative = 0.0
+            p2 = candidates[-1]
+            for p, w in zip(candidates, weights):
+                cumulative += w
+                if r <= cumulative:
+                    p2 = p
+                    break
+        return p2
 
     def build_pairs(
-        self, population: list[Program]
+        cls, population: list[Program]
     ) -> list[tuple[Program, Program, TestCase | None]]:
         """Build (p1, p2, t*) pairs using complementarity rank sampling."""
-        theta_time, theta_mem = self._compute_thresholds(population)
+        theta_time, theta_mem = cls._compute_thresholds(population)
         pairs = []
         n = len(population)
 
@@ -229,45 +255,31 @@ class Selection:
             candidates = [p for p in population if p.id != p1.id]
             if not candidates:
                 continue
-
-            # Score each candidate by complementarity
-            scores = [
-                self._complementarity(p1, p2, strategy, theta_time, theta_mem)
-                for p2 in candidates
-            ]
-
-            # Rank-based weights (rank 1 = highest complementarity)
-            order = sorted(range(len(candidates)), key=lambda i: -scores[i])
-            weights = [0.0] * len(candidates)
-            for rank, idx in enumerate(order):
-                weights[idx] = n - rank  # rank 1 → weight n
-
-            total_w = sum(weights)
-            if total_w == 0.0:
-                p2 = random.choice(candidates)
-            else:
-                r = random.uniform(0, total_w)
-                cumulative = 0.0
-                p2 = candidates[-1]
-                for p, w in zip(candidates, weights):
-                    cumulative += w
-                    if r <= cumulative:
-                        p2 = p
-                        break
-
-            t_star = self._representative_testcase(p1, p2, strategy, theta_time, theta_mem)
+            p2 = cls._get_pair(p1, candidates, strategy, theta_time, theta_mem, n)
+            t_star = cls._representative_testcase(p1, p2, strategy, theta_time, theta_mem)
             pairs.append((p1, p2, t_star))
-
         return pairs
     
-    def run(self, population: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
+    def run(cls, population: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
         """Run the full selection process and return (p1, p2, t*) pairs."""
-        population = self.survivor_selection(population, pop_size)
-        self.assign_strategies(population)
-        return self.build_pairs(population)
+        population = cls.survivor_selection(population, pop_size)
+        for p in population:
+            cls.assign_strategy(p)
+        return cls.build_pairs(population)
     
     # ---------------------------------------------------------------- #
-    # Final solution selection (EvoFix §9)                             #
+    # Reference selection                                              #
+    # ---------------------------------------------------------------- #
+    
+    @classmethod
+    def one(cls, buggy: Program, references: list[Program]) -> Program:
+        """Select a single reference program from the provided list."""
+        theta_time, theta_mem = cls._compute_thresholds(references)
+        p2 = cls._get_pair(buggy, references, buggy.strategy, theta_time, theta_mem, len(references)+1)
+        return p2
+
+    # ---------------------------------------------------------------- #
+    # Final solution selection                                         #
     # ---------------------------------------------------------------- #
 
     @classmethod

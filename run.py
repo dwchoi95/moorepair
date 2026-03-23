@@ -2,16 +2,19 @@ import os
 import glob
 import argparse
 
-from experiments import Experiments
+from src.baselines import Experiments
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', type=str, required=True,
                         help="Path to dataset directory or JSON file")
-    parser.add_argument('-g', '--generations', type=int, default=10,
-                        help="Number of generations (default: 10)")
-    parser.add_argument('-p', '--popsize', type=int, default=10,
-                        help="Population size (default: 10)")
+    parser.add_argument('-a', '--approach', type=str, default="moorepair",
+                        choices=["moorepair", "baseline"],
+                        help="Approach to run (default: moorepair)")
+    parser.add_argument('-g', '--generations', type=int, default=5,
+                        help="Number of generations (default: 5)")
+    parser.add_argument('-p', '--popsize', type=int, default=5,
+                        help="Population size (default: 5)")
     parser.add_argument('-l', '--llm', type=str,
                         default='codellama/CodeLlama-7b-Instruct-hf',
                         help="LLM model name (default: CodeLlama-7b-Instruct-hf)")
@@ -40,6 +43,7 @@ if __name__ == "__main__":
         llm=args.llm,
         temperature=args.temperature,
         sampling=args.sampling,
+        approach=args.approach.lower(),
         reset=args.reset,
     )
     ex.run(problems)

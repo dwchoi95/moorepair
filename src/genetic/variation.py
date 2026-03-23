@@ -1,15 +1,10 @@
 import re
 import asyncio
 from tqdm.asyncio import tqdm as tqdm_async
-from pydantic import BaseModel
 
 from ..execution.program import Program
 from ..execution.testcases import TestCase
-from ..execution.tester import Tester
-
-
-class OutFormat(BaseModel):
-    fixed_program: str
+from ..utils import Randoms
 
 
 # ------------------------------------------------------------------ #
@@ -146,26 +141,32 @@ Return ONLY the merged {language} code."""
 # Initial-population prompt                                           #
 # ------------------------------------------------------------------ #
 
-_INIT_SYSTEM = (
-    "You are an expert competitive programmer. "
-    "Fix the given buggy code so that it is both correct and efficient."
-)
+_INIT_SYSTEM = """\
+# Role
+You are an expert programmer.
+
+# Task
+Please fix bugs and optimize the efficiency of the following Python code based on the problem description and reference code.
+Ensure the fixed code can pass the given test case.
+
+# Output Format
+Please provide the fixed code as string.
+Do not include any explanations or comments"""
+
 _INIT_USER = """\
+# Inputs
 ## Problem Description
 {description}
-
-## Test Cases
-{test_cases}
 
 ## Buggy Code
 {buggy_code}
 
-## Instructions
-- Analyze why the code produces wrong/slow/memory-heavy results
-- Produce a fixed version that passes all test cases
-- Aim for both correctness AND efficiency
+## Reference Code
+{refer_code}
 
-Return ONLY the corrected code."""
+
+# Output
+## Fixed Code"""
 
 
 # ------------------------------------------------------------------ #
@@ -178,32 +179,32 @@ class Variation:
 
     # ---- profile helpers ----------------------------------------- #
 
-    def _get_coverage(self, program: Program, tc: TestCase) -> dict:
-        """Return the coverage dict for *tc* from program.results, or {}."""
+    def _get_profile(self, program: Program, tc: TestCase) -> dict:
+        """Return the profile dict for *tc* from program.results, or {}."""
         tr = self._get_tc_result(program, tc)
-        if tr and tr.result and isinstance(tr.result.coverage, dict):
-            return tr.result.coverage
+        if tr and tr.result and isinstance(tr.result.profile, dict):
+            return tr.result.profile
         return {}
 
     def _format_time_profile(self, program: Program, tc: TestCase) -> str:
-        """Format line-level runtime profile from coverage data."""
-        coverage = self._get_coverage(program, tc)
-        if not coverage:
+        """Format line-level runtime profile from profile data."""
+        profile = self._get_profile(program, tc)
+        if not profile:
             return "(no profile available)"
         lines = []
-        for lineno, data in sorted(coverage.items(), key=lambda x: int(x[0])):
+        for lineno, data in sorted(profile.items(), key=lambda x: int(x[0])):
             hits = data.get("hits", 0)
             runtime_ms = data.get("runtime", 0.0) * 1000.0
             lines.append(f"L{lineno}: {runtime_ms:.3f} ms ({hits} hits)")
         return "\n".join(lines) if lines else "(no profile available)"
 
     def _format_memory_profile(self, program: Program, tc: TestCase) -> str:
-        """Format line-level memory profile from coverage data."""
-        coverage = self._get_coverage(program, tc)
-        if not coverage:
+        """Format line-level memory profile from profile data."""
+        profile = self._get_profile(program, tc)
+        if not profile:
             return "(no profile available)"
         lines = []
-        for lineno, data in sorted(coverage.items(), key=lambda x: int(x[0])):
+        for lineno, data in sorted(profile.items(), key=lambda x: int(x[0])):
             hits = data.get("hits", 0)
             memory_mb = data.get("memory", 0.0)
             lines.append(f"L{lineno}: {memory_mb:.4f} MB ({hits} hits)")
@@ -211,12 +212,12 @@ class Variation:
 
     # ---- prompt builders ----------------------------------------- #
 
-    def _init_prompt(self, buggy: Program) -> tuple[str, str]:
+    def _init_prompt(self, buggy: Program, reference: Program) -> tuple[str, str]:
         system = _INIT_SYSTEM
         user = _INIT_USER.format(
             description=self.description,
-            test_cases=str(Tester.testcases),
-            buggy_code=f"```{buggy.ext}\n{buggy.code}\n```"
+            buggy_code=f"```{buggy.ext}\n{buggy.code}\n```",
+            refer_code=f"```{reference.ext}\n{reference.code}\n```",
         )
         return system, user
 
@@ -324,38 +325,34 @@ class Variation:
 
     # ---- LLM async task ------------------------------------------ #
 
-    async def _task(self, system: str, user: str) -> OutFormat | None:
+    async def _task(self, buggy: Program, reference: Program) -> str | None:
         from ..llms import Models
-        return await Models.run(system, user, OutFormat)
+        system, user = self._init_prompt(buggy, reference)
+        return await Models.run(system, user)
 
-    def _post_process(self, code: str) -> str:
-        code = code.strip()
-        while code.startswith("```") and code.endswith("```"):
-            m = re.search(r"```(?:[a-zA-Z0-9_+-]+)?[\r\n]+(.*?)```", code, flags=re.DOTALL)
-            if m:
-                code = m.group(1).strip()
-            else:
-                break
-        return code
+
 
     # ---- async orchestration ------------------------------------- #
 
-    async def _run_init_async(self, buggy: Program, count: int) -> list[Program]:
+    async def _run_init_async(self, buggy: Program, references: list[Program], count: int) -> list[Program]:
         """Generate *count* initial candidates (syntax-only validation done in GA)."""
-        system, user = self._init_prompt(buggy)
-        tasks = [asyncio.create_task(self._task(system, user)) for _ in range(count)]
+        if len(references) >= count:
+            selected = Randoms.sample(references, count)
+        else:
+            selected = [Randoms.choice(references) for _ in range(count)]
+        tasks = [asyncio.create_task(self._task(buggy, refer)) for refer in selected]
 
         programs = []
         pbar = tqdm_async(total=len(tasks), desc="Init", leave=False, position=2)
         for coro in asyncio.as_completed(tasks):
-            response: OutFormat = await coro
+            patch: str | None = await coro
             pbar.update(1)
-            if response is None or not response.fixed_program.strip():
+            if patch is None or not patch.strip():
                 continue
             programs.append(
                 Program(
                     id=f"init_{len(programs) + 1}",
-                    code=self._post_process(response.fixed_program),
+                    code=patch,
                     ext=buggy.ext,
                 )
             )
@@ -385,14 +382,14 @@ class Variation:
         programs = []
         pbar = tqdm_async(total=len(tasks), desc="Variation", leave=False, position=2)
         for coro, ext in zip(asyncio.as_completed(tasks), meta):
-            response: OutFormat = await coro
+            patch: str | None = await coro
             pbar.update(1)
-            if response is None or not response.fixed_program.strip():
+            if patch is None or not patch.strip():
                 continue
             programs.append(
                 Program(
                     id=f"child_{len(programs) + 1}",
-                    code=self._post_process(response.fixed_program),
+                    code=patch,
                     ext=ext,
                 )
             )
@@ -412,10 +409,10 @@ class Variation:
             asyncio.set_event_loop(loop)
         return loop
 
-    def run_init(self, buggy: Program, count: int) -> list[Program]:
+    def run_init(self, buggy: Program, references: list[Program], count: int) -> list[Program]:
         """Generate *count* candidate programs for initial population."""
         loop = self._asyncio_loop()
-        return loop.run_until_complete(self._run_init_async(buggy, count))
+        return loop.run_until_complete(self._run_init_async(buggy, references, count))
 
     def run(self, buggy: Program, pairs: list[tuple]) -> list[Program]:
         """Generate offspring from (p1, p2, t*) pairs."""

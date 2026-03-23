@@ -41,7 +41,7 @@ def main():
             "status": "error",
             "stdout": "",
             "stderr": f"Runner payload parse error: {exc}",
-            "coverage": {},
+            "profile": {},
             "memory": 0.0,
         }))
         return
@@ -51,7 +51,8 @@ def main():
     memlimit = float(payload.get("memlimit", 64))
     profiling = bool(payload.get("profiling", False))
 
-    coverage = {}
+    profile = {}
+    code_lines = code.splitlines()
     state = {"prev_line": None, "prev_time": None}
 
     def _finalize(lineno, now, mem):
@@ -59,16 +60,17 @@ def main():
         if prev_time is None:
             return
         runtime = now - prev_time
-        entry = coverage.setdefault(str(lineno), {"hits": 0, "runtime": 0.0, "memory": 0.0})
+        entry = profile.setdefault(str(lineno), {"hits": 0, "runtime": 0.0, "memory": 0.0, "statement": ""})
         entry["hits"] += 1
         entry["runtime"] += runtime
-        entry["memory"] = max(entry["memory"], mem)
+        entry["memory"] = mem
+        entry["statement"] = code_lines[lineno - 1].strip() if 0 < lineno <= len(code_lines) else ""
 
     def tracer(frame, event, arg):
         if frame.f_code.co_filename != "<student_code>":
             return tracer
         memory = tracemalloc.get_traced_memory()[0] / (1024 * 1024)
-        now = time.perf_counter()
+        now = time.process_time()
         if event == "line":
             if state["prev_line"] is not None:
                 _finalize(state["prev_line"], now, memory)
@@ -95,19 +97,19 @@ def main():
 
     memory = 0.0
     runtime = 0.0
-    coverage = {}
+    profile = {}
     tracemalloc.start()
     if profiling:
         sys.settrace(tracer)
     compiled = compile(code, "<student_code>", "exec")
     sandbox_globals = {"__name__": "__main__", "__builtins__": __builtins__}
-    start = time.perf_counter()
+    start = time.process_time()
     try:
         exec(compiled, sandbox_globals)
     except SystemExit:
         pass
     finally:
-        runtime = time.perf_counter() - start
+        runtime = time.process_time() - start
         if profiling:
             sys.settrace(None)
         memory = tracemalloc.get_traced_memory()[1] / (1024 * 1024)
@@ -127,7 +129,7 @@ def main():
     response = {
         "stdout": stdout,
         "stderr": stderr,
-        "coverage": coverage,
+        "profile": profile,
         "runtime": runtime,
         "memory": memory,
     }
@@ -143,12 +145,12 @@ class Tester:
     def init_globals(
         cls,
         testcases: TestCases,
-        timelimit: float = 1,
-        memlimit: float = 64,
+        timelimit: int = 1,
+        memlimit: int = 64,
     ):
         cls.testcases = testcases
-        cls.timelimit = float(timelimit)
-        cls.memlimit = float(memlimit)
+        cls.timelimit = timelimit + 0.5
+        cls.memlimit = memlimit + 1
         cls._run_cache.cache_clear()
 
     @classmethod
@@ -222,20 +224,19 @@ class Tester:
             },
             ensure_ascii=False,
         )
-        timeout = max(cls.timelimit, 0.0) + 1.0
 
         status = None
         stdout = stderr = ""
         runtime = cls.timelimit
         memory = cls.memlimit
-        coverage = {}
+        profile = {}
         try:
             completed = subprocess.run(
                 [sys.executable, "-c", _SUBPROCESS_RUNNER],
                 input=payload,
                 text=True,
                 capture_output=True,
-                timeout=None if profiling else timeout,
+                timeout=None if profiling else cls.timelimit,
                 check=False,
             )
             raw_response = completed.stdout.strip()
@@ -244,23 +245,23 @@ class Tester:
             stderr = str(response.get("stderr", ""))
             runtime = float(response.get("runtime", 0.0))
             memory = float(response.get("memory", 0.0))
-            raw_coverage = response.get("coverage", {})
-            coverage = {}
-            if isinstance(raw_coverage, dict):
-                for lineno, value in raw_coverage.items():
+            raw_profile = response.get("profile", {})
+            profile = {}
+            if isinstance(raw_profile, dict):
+                for lineno, value in raw_profile.items():
                     try:
-                        coverage[int(lineno)] = value
+                        profile[int(lineno)] = value
                     except (TypeError, ValueError):
                         continue
         except Exception as exc:
             status = Status.ERROR
 
-        return status, stdout, stderr, coverage, runtime, memory
+        return status, stdout, stderr, profile, runtime, memory
 
     @classmethod
     def _validation(cls, args:tuple[str, TestCase, bool]) -> TestcaseResult:
         code, tc, profiling = args
-        status, stdout, stderr, coverage, runtime, memory = \
+        status, stdout, stderr, profile, runtime, memory = \
             cls._profiler(code, tc.input, profiling)
         if status is None:
             if cls.__is_equal(tc.output, stdout):
@@ -275,7 +276,7 @@ class Tester:
                 stderr=stderr,
                 runtime=runtime,
                 memory=memory,
-                coverage=coverage
+                profile=profile
             )
         )
     

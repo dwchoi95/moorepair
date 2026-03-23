@@ -12,7 +12,59 @@ class Result:
     stderr:str = field(metadata={"desc":"Standard error from the execution"})
     runtime:float = field(default=0.0, metadata={"desc":"Execution time in seconds"})
     memory:float = field(default=0.0, metadata={"desc":"Memory usage in megabytes"})
-    coverage:dict = field(default_factory=dict, metadata={"desc":"Line-level profile: {lineno: {hits, runtime, memory}}"})
+    profile:dict = field(default_factory=dict, metadata={"desc":"Line-level profile: {lineno: {hits, runtime, memory, statement}}"})
+    
+    def profile_report(self) -> str:
+        if not self.profile:
+            return ""
+
+        def fmt_time(t):
+            if t < 1e-6:
+                return f"{t * 1e9:.1f} ns"
+            if t < 1e-3:
+                return f"{t * 1e6:.1f} µs"
+            if t < 1.0:
+                return f"{t * 1e3:.1f} ms"
+            return f"{t:.4f} s"
+
+        def fmt_mem(m):
+            if m < 0.001:
+                return f"{m * 1024 * 1024:.1f} B"
+            if m < 1.0:
+                return f"{m * 1024:.1f} KiB"
+            return f"{m:.2f} MiB"
+
+        total_runtime = sum(e["runtime"] for e in self.profile.values())
+        sorted_lines = sorted(self.profile.keys(), key=lambda k: int(k))
+
+        header = (
+            f"Total runtime: {fmt_time(self.runtime)}    "
+            f"Total memory: {fmt_mem(self.memory)}\n\n"
+            f"{'Line #':>8}  {'Hits':>6}  {'Time':>12}  {'Per Hit':>12}  "
+            f"{'% Time':>8}  {'Mem usage':>12}  {'Increment':>12}  Line Contents\n"
+            f"{'=' * 110}"
+        )
+
+        lines = [header]
+        prev_mem = 0.0
+        for lineno in sorted_lines:
+            entry = self.profile[lineno]
+            hits = entry["hits"]
+            runtime = entry["runtime"]
+            memory = entry["memory"]
+            stmt = entry.get("statement", "")
+
+            per_hit = runtime / hits if hits else 0.0
+            pct_time = (runtime / total_runtime * 100) if total_runtime else 0.0
+            increment = memory - prev_mem
+
+            lines.append(
+                f"{lineno:>8}  {hits:>6d}  {fmt_time(runtime):>12}  {fmt_time(per_hit):>12}  "
+                f"{pct_time:>7.1f}%  {fmt_mem(memory):>12}  {fmt_mem(increment):>12}  {stmt}"
+            )
+            prev_mem = memory
+
+        return "\n".join(lines)
 
 @dataclass
 class TestcaseResult:
@@ -92,46 +144,29 @@ class Results:
         mems = [tr.result.memory for tr in self.ts if tr.result]
         return max(mems) if mems else 0.0
     
-    def coverage(self) -> set:
-        cov = list()
-        for tr in self.ts:
-            lines = tr.result.coverage if (tr.result and tr.result.coverage) else []
-            cov.extend(lines)
-        return set(cov)
+    def report(self) -> str:
+        valid = [tr for tr in self.ts if tr.result and tr.result.profile]
+        if not valid:
+            return {}
 
-    def get_coverage_line(self) -> dict:
-        tc_coverage = {}
-        for tr in self.ts:
-            lines = tr.result.coverage if (tr.result and tr.result.coverage) else []
-            tc_coverage[tr.testcase.id] = set(lines)
-        return tc_coverage
+        runtimes = [tr.result.runtime for tr in valid]
+        memories = [tr.result.memory for tr in valid]
 
-    @classmethod
-    def _normalize_stmt(cls, stmt:str) -> str:
-        if not stmt:
-            return ""
-        stmt = cls._BLOCK_COMMENT_RE.sub(" ", stmt)
-        stmt = cls._INLINE_COMMENT_RE.sub("", stmt)
-        stmt = " ".join(stmt.split())
-        if not stmt:
-            return ""
-        if cls._TRIVIAL_STMT_RE.match(stmt):
-            return ""
-        return stmt
+        rt_min, rt_max = min(runtimes), max(runtimes)
+        mem_min, mem_max = min(memories), max(memories)
 
-    def get_coverage_stmt(self, code:str) -> dict:
-        code_lines = code.splitlines()
-        line_cov = self.get_coverage_line()
-        tc_stmts = {}
-        for tc_id, line_nums in line_cov.items():
-            stmts = set()
-            for lineno in line_nums:
-                if not isinstance(lineno, int):
-                    continue
-                if lineno < 1 or lineno > len(code_lines):
-                    continue
-                stmt = self._normalize_stmt(code_lines[lineno - 1])
-                if stmt:
-                    stmts.add(stmt)
-            tc_stmts[tc_id] = stmts
-        return tc_stmts
+        rt_range = rt_max - rt_min
+        mem_range = mem_max - mem_min
+
+        best_tr = None
+        best_score = -1.0
+
+        for tr in valid:
+            norm_rt = (tr.result.runtime - rt_min) / rt_range if rt_range else 0.0
+            norm_mem = (tr.result.memory - mem_min) / mem_range if mem_range else 0.0
+            score = norm_rt + norm_mem
+            if score > best_score:
+                best_score = score
+                best_tr = tr
+
+        return best_tr.result.profile_report()

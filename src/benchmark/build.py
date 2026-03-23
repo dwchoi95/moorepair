@@ -182,19 +182,19 @@ class BenchmarkBuilder:
                 "output": str(testcase["output"]),
             })
 
-        problem_id = str(problem.get("id") or "")
-        contest_id = cls._contest_id(problem_id)
-        if contest_id:
-            contest_tests = cls._load_generated_tests_for_contest(contest_id)
-            for testcase in contest_tests.get(problem_id, []):
-                key = (testcase["input"], testcase["output"])
-                if key in seen:
-                    continue
-                seen.add(key)
-                merged.append({
-                    "input": testcase["input"],
-                    "output": testcase["output"],
-                })
+        # problem_id = str(problem.get("id") or "")
+        # contest_id = cls._contest_id(problem_id)
+        # if contest_id:
+        #     contest_tests = cls._load_generated_tests_for_contest(contest_id)
+        #     for testcase in contest_tests.get(problem_id, []):
+        #         key = (testcase["input"], testcase["output"])
+        #         if key in seen:
+        #             continue
+        #         seen.add(key)
+        #         merged.append({
+        #             "input": testcase["input"],
+        #             "output": testcase["output"],
+        #         })
 
         return [
             {"id": index, "input": testcase["input"], "output": testcase["output"]}
@@ -299,10 +299,9 @@ class BenchmarkBuilder:
     @classmethod
     def run(
         cls,
-        output_dir: str = "data",
         language: str | None = None,
         min_count: int = 20,
     ) -> int:
         problems = cls.load_problems()
         groups = cls.load_submissions(set(problems.keys()), language)
-        return cls.write_benchmark(groups, problems, output_dir, min_count)
+        return cls.write_benchmark(groups, problems, min_count)

@@ -76,10 +76,10 @@ class BenchmarkVerifier:
                 pbar.set_postfix({"match": f"{pct(tot-len(mismatches), tot)}"})
             pbar.close()
             
-            # path에 있는 파일에 이어서 mismatch 기록
             with open(path, 'r') as f:
                 dataset = json.load(f)
-            dataset['mismatches'] = mismatches
+            existing = dataset.get('mismatches', [])
+            dataset['mismatches'] = list(set(existing) | set(mismatches))
             with open(path, 'w') as f:
                 json.dump(dataset, f, indent=4)
 
@@ -94,8 +94,8 @@ class BenchmarkVerifier:
         overview.add_row(["Mismatched", f"{total - matched} ({pct(total - matched, total)})"])
         print(overview)
 
-        verdict_table = PrettyTable(["Verdict (stored)", "Total", "Match", "Accuracy"])
-        verdict_table.align["Verdict (stored)"] = "l"
+        verdict_table = PrettyTable(["Verdict", "Total", "Match", "Accuracy"])
+        verdict_table.align["Verdict"] = "l"
         verdict_table.align["Total"] = "r"
         verdict_table.align["Match"] = "r"
         verdict_table.align["Accuracy"] = "r"
