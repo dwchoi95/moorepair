@@ -154,6 +154,5 @@ CodeNet/
 CLAUDE.md
 EvoFix.md
 .claude/
-baselines/
 .github/
 test.ipynb
