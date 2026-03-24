@@ -325,9 +325,8 @@ class Variation:
 
     # ---- LLM async task ------------------------------------------ #
 
-    async def _task(self, buggy: Program, reference: Program) -> str | None:
+    async def _task(self, system: str, user: str) -> str | None:
         from ..llms import Models
-        system, user = self._init_prompt(buggy, reference)
         return await Models.run(system, user)
 
 
@@ -340,7 +339,7 @@ class Variation:
             selected = Randoms.sample(list(references), count)
         else:
             selected = [Randoms.choice(list(references)) for _ in range(count)]
-        tasks = [asyncio.create_task(self._task(buggy, refer)) for refer in selected]
+        tasks = [asyncio.create_task(self._task(*self._init_prompt(buggy, reference))) for reference in selected]
 
         programs = []
         pbar = tqdm_async(total=len(tasks), desc="Init", leave=False, position=2)

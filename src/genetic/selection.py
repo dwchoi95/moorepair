@@ -6,10 +6,8 @@ from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.core.population import Population
 
-from ..execution.program import Program
-from ..execution.testcases import TestCase
-from ..execution.tester import Status
-
+from .fitness import Fitness
+from ..execution import Program, TestCase, Status
 
 class Selection:
     """EvoFix three-step selection.
@@ -268,6 +266,7 @@ class Selection:
     @classmethod
     def run(cls, population: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
         """Run the full selection process and return (p1, p2, t*) pairs."""
+        fitness = [Fitness.evaluate(p) for p in population]
         population = cls.survivor_selection(population, pop_size)
         for p in population:
             cls.assign_strategy(p)
