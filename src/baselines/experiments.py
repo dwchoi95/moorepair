@@ -16,13 +16,13 @@ from .effilearner import EffiLearner
 from src.llms import Models, Tokenizer
 from src.genetic import Fitness, Selection
 from src.utils import ETC, Loader
-from src.execution import Tester, Program, Programs, TestCases
+from src.execution import Tester, Programs
 
 
 class Experiments:
     def __init__(self,
-        generations:int=10, pop_size:int=10,
-        llm:str="codellama/CodeLlama-34b-Instruct-hf",
+        generations:int=5, pop_size:int=10,
+        llm:str="codellama/CodeLlama-7b-Instruct-hf",
         temperature:float=0.8, sampling:bool=False, 
         approach:str="moorepair", reset:bool=False,
     ):
@@ -200,10 +200,11 @@ class Experiments:
             moo_repair = MooRepair(buggys, references, description, log_path)
             results = moo_repair.run(self.generations, self.pop_size)
         else:
+            generations = (self.generations+1) * self.pop_size // 2
             par = PaR(buggys, references, description, log_path)
-            corrects = asyncio.run(par.run(self.generations))
+            corrects = asyncio.run(par.run(generations))
             effi_learner = EffiLearner(corrects, description, log_path)
-            results = asyncio.run(effi_learner.run(self.generations))
+            results = asyncio.run(effi_learner.run(generations))
             
         self.__save_results(problemId, buggys, results)
 

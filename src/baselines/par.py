@@ -139,8 +139,8 @@ class PaR:
                 best_refer = refer
         return best_refer
 
-    async def _run_single(self, buggy: Program, generations:int=5):
-        solutions = []
+    async def _run_single(self, buggy: Program, generations:int=5) -> Program:
+        correct = None
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         reference = self._get_reference(buggy)
         for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
@@ -164,13 +164,14 @@ class PaR:
             self.logger.info(
                 f"Patch: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
             if passed:
-                solutions.append(patch)
+                correct = patch
                 break
-        return solutions
-    
-    async def run(self, generations: int = 5) -> Programs:
+        return correct
+
+    async def run(self, generations: int = 30) -> Programs:
         corrects = Programs()
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
-            solutions = await self._run_single(buggy, generations)
-            corrects.extend(solutions)
+            patch = await self._run_single(buggy, generations)
+            if patch is None: continue
+            corrects.append(patch)
         return corrects

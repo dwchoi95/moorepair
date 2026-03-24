@@ -154,7 +154,7 @@ class MooRepair:
     # Public entry point                                               #
     # ---------------------------------------------------------------- #
 
-    def run(self, generations: int = 10, pop_size: int = 10) -> dict:
+    def run(self, generations: int = 5, pop_size: int = 10) -> dict:
         results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
             results[buggy.id] = self._ga_run(buggy, generations, pop_size)

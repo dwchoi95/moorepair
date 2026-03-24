@@ -43,6 +43,7 @@ class EffiLearner:
     ):
         self.corrects = corrects
         self.description = description
+        self._patch_uid = 0
 
         log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,6 +58,14 @@ class EffiLearner:
         fh.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
         self.logger.addHandler(fh)
         self.logger.propagate = False
+
+    def _make_problem(self, patch: str) -> Program:
+        self._patch_uid += 1
+        return Program(
+            id=f"pop_{self._patch_uid}",
+            code=patch,
+            ext="py",
+        )
     
     async def _run_single(self, correct: Program, generations:int=5):
         result = {}
@@ -79,24 +88,16 @@ class EffiLearner:
                     reports=results.report()
                 ))
             if patch is None: continue
-            patch = Program(
-                id=correct.id,
-                code=patch,
-                ext=correct.ext,
-            )
+            patch = self._make_problem(patch)
             results = Tester.run(patch)
             passed = Tester.is_all_pass(results)
             self.logger.info(
                 f"Patch: {Status.PASSED if passed else Status.FAILED}\n{patch}\n")
             if passed:
-                fitness = Fitness.evaluate(patch)
                 solutions.append(patch)
-                for remaining in range(gen, generations + 1):
-                    result.setdefault(remaining, solutions.copy())
-                break
         return result
     
-    async def run(self, generations:int=5):
+    async def run(self, generations:int=30):
         results = {}
         for correct in tqdm(self.corrects, desc="Correct", position=0):
             results[correct.id] = await self._run_single(correct, generations)

@@ -13,8 +13,8 @@ if __name__ == "__main__":
                         help="Approach to run (default: moorepair)")
     parser.add_argument('-g', '--generations', type=int, default=5,
                         help="Number of generations (default: 5)")
-    parser.add_argument('-p', '--popsize', type=int, default=5,
-                        help="Population size (default: 5)")
+    parser.add_argument('-p', '--popsize', type=int, default=10,
+                        help="Population size (default: 10)")
     parser.add_argument('-l', '--llm', type=str,
                         default='codellama/CodeLlama-7b-Instruct-hf',
                         help="LLM model name (default: CodeLlama-7b-Instruct-hf)")
