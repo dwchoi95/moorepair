@@ -285,7 +285,7 @@ class Selection:
     @classmethod
     def prioritization(cls, population: list[Program]) -> Program | None:
         """From P_c (f_fail=0) pick Pareto-optimal by crowding distance on f_time+f_mem."""
-        P_c = [p for p in population if p.fitness and p.fitness["f_fail"] == 0.0]
+        P_c = [p for p in population if p.fitness["f_fail"] == 0.0]
         if not P_c:
             # Fallback: return individual with lowest f_fail
             valid = [p for p in population if p.fitness is not None]

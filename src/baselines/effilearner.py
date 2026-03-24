@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 from tqdm import tqdm
 from src.llms import Models
+from src.genetic import Fitness
 from src.execution import Programs, Program, Tester, Status
-from src.utils import ETC
 
 SYSTEM = '''Optimize the efficiency of the following Python code based on the task, test case, and overhead analysis provided. Ensure the optimized code can pass the given test case.'''
 
@@ -89,6 +89,7 @@ class EffiLearner:
             self.logger.info(
                 f"Patch: {Status.PASSED if passed else Status.FAILED}\n{patch}\n")
             if passed:
+                fitness = Fitness.evaluate(patch)
                 solutions.append(patch)
                 for remaining in range(gen, generations + 1):
                     result.setdefault(remaining, solutions.copy())
