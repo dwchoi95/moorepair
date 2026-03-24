@@ -137,7 +137,7 @@ class PaREffiLearner:
                 self.logger.info(
                     f"PaR: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
                 if passed:
-                    results = Tester.run(patch, profile=True)
+                    results = Tester.run(patch, profiling=True)
                     valids.append(patch)
             efficients = self.variation.efficient(valids)
             for patch in efficients:

@@ -81,7 +81,7 @@ class Experiments:
                     continue
                 patch = Selection.prioritization(patches)
 
-                patch_results = Tester.run(patch, profile=True)
+                patch_results = Tester.run(patch, profiling=True)
                 generation_stats[gen]['fixed'] += 1
                 generation_stats[gen]['ET']  += patch_results.ET()
                 generation_stats[gen]['MU']  += patch_results.MU()
