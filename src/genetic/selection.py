@@ -1,4 +1,3 @@
-import random
 import statistics
 
 import numpy as np
@@ -8,6 +7,7 @@ from pymoo.core.population import Population
 
 from .fitness import Fitness
 from ..execution import Program, TestCase, Status
+from ..utils import ETC, Randoms
 
 class Selection:
     """EvoFix three-step selection.
@@ -20,7 +20,7 @@ class Selection:
     STRATEGIES = ["f_fail", "f_time", "f_mem"]
 
     @classmethod
-    def delta(cls,before: float, after: float) -> float:
+    def delta(cls, before: float, after: float) -> float:
         """Improvement rate ∈ [-1, 1]; 0 when denominator is zero."""
         denom = before + after
         if denom == 0.0:
@@ -96,10 +96,10 @@ class Selection:
             total = 3.0
 
         # SUS: single pointer
-        pointer = random.uniform(0, total)
+        pointer = Randoms.uniform(0, total)
         cumulative = 0.0
-        chosen = Selection.STRATEGIES[0]
-        for strategy, w in zip(Selection.STRATEGIES, weights):
+        chosen = cls.STRATEGIES[0]
+        for strategy, w in zip(cls.STRATEGIES, weights):
             cumulative += w
             if pointer <= cumulative:
                 chosen = strategy
@@ -202,7 +202,7 @@ class Selection:
         p2_by_id = {tr.testcase.id: tr for tr in p2.results if tr.result}
 
         if strategy == "f_fail":
-            tc_id = random.choice(list(overlap_ids))
+            tc_id = Randoms.choice(list(overlap_ids))
             return p1_by_id[tc_id].testcase
 
         # For f_time / f_mem pick the test case with the largest difference
@@ -232,9 +232,9 @@ class Selection:
 
         total_w = sum(weights)
         if total_w == 0.0:
-            p2 = random.choice(candidates)
+            p2 = Randoms.choice(candidates)
         else:
-            r = random.uniform(0, total_w)
+            r = Randoms.uniform(0, total_w)
             cumulative = 0.0
             p2 = candidates[-1]
             for p, w in zip(candidates, weights):
@@ -264,9 +264,24 @@ class Selection:
         return pairs
     
     @classmethod
-    def run(cls, population: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
+    def run(cls, population: list[Program], pop_size: int, selection: bool) -> list[tuple[Program, Program, TestCase | None]]:
         """Run the full selection process and return (p1, p2, t*) pairs."""
-        fitness = [Fitness.evaluate(p) for p in population]
+        fitnesses = [Fitness.evaluate(p) for p in population]
+        if selection: # Random selection
+            population = Randoms.sample(population, pop_size)
+            pairs = []
+            for p1 in population:
+                p1.strategy = Randoms.choice(cls.STRATEGIES)
+                candidates = [p for p in population if p.id != p1.id]
+                if not candidates:
+                    continue
+                p2 = Randoms.choice(candidates)
+                testcases = [tr.testcase for tr in p1.results if tr.result]
+                testcases.append(None)
+                t_star = Randoms.choice(testcases)
+                pairs.append((p1, p2, t_star))
+            return pairs
+        
         population = cls.survivor_selection(population, pop_size)
         for p in population:
             cls.assign_strategy(p)
@@ -289,37 +304,26 @@ class Selection:
 
     @classmethod
     def prioritization(cls, population: list[Program]) -> Program | None:
-        """From P_c (f_fail=0) pick Pareto-optimal by crowding distance on f_time+f_mem."""
-        P_c = [p for p in population if p.fitness["f_fail"] == 0.0]
-        if not P_c:
-            # Fallback: return individual with lowest f_fail
-            valid = [p for p in population if p.fitness is not None]
-            if not valid:
-                return None
-            return min(valid, key=lambda p: p.fitness["f_fail"])
+        """Pick the program with the smallest mean of min-max normalized (ET, MU, TMU).
+        Assumes all programs in population have already passed all test cases."""
+        if not population:
+            return None
+        if len(population) == 1:
+            return population[0]
 
-        if len(P_c) == 1:
-            return P_c[0]
+        et_vals  = [p.results.ET()  for p in population]
+        mu_vals  = [p.results.MU()  for p in population]
+        tmu_vals = [p.results.TMU() for p in population]
 
-        # Build F matrix for (f_time, f_mem)
-        f_time_vals = [p.fitness["f_time"] for p in P_c]
-        f_mem_vals  = [p.fitness["f_mem"] for p in P_c]
-        F = np.array(list(zip(f_time_vals, f_mem_vals)), dtype=float)
+        def _normalize(vals: list[float]) -> list[float]:
+            lo, hi = min(vals), max(vals)
+            if hi == lo:
+                return [0.0] * len(vals)
+            return [(v - lo) / (hi - lo) for v in vals]
 
-        X = np.zeros((len(P_c), 1))
-        pop_pymoo = Population.new("X", X, "F", F)
-        pop_pymoo.set("key", np.arange(len(P_c)))
-        problem = Problem(n_var=1, n_obj=2, xl=np.array([0.0]), xu=np.array([1.0]))
+        et_n  = _normalize(et_vals)
+        mu_n  = _normalize(mu_vals)
+        tmu_n = _normalize(tmu_vals)
 
-        algo = NSGA2(pop_size=len(P_c))
-        survivors = algo.survival.do(problem, pop_pymoo, n_survive=len(P_c))
-
-        # crowding distances stored by pymoo in "crowding" attribute
-        try:
-            cd = survivors.get("crowding")
-            idx = int(np.argmax(cd))
-            selected_key = int(survivors.get("key")[idx])
-        except Exception:
-            selected_key = int(survivors.get("key")[0])
-
-        return P_c[selected_key]
+        scores = [ETC.divide(et_n[i] + mu_n[i] + tmu_n[i], 3.0) for i in range(len(population))]
+        return population[int(np.argmin(scores))]

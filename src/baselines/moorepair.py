@@ -14,10 +14,12 @@ class MooRepair:
         buggys: Programs,
         references: Programs,
         description: str,
+        selection: bool,
         log_path: str = "logs/temp.log",
     ):
         self.buggys = buggys
         self.references = references
+        self.selection = selection
         self.variation = Variation(description)
         self._patch_uid = 0
 
@@ -35,17 +37,9 @@ class MooRepair:
         self.logger.addHandler(fh)
         self.logger.propagate = False
 
-    # ---------------------------------------------------------------- #
-    # Helpers                                                          #
-    # ---------------------------------------------------------------- #
-
     def _assign_patch_id(self, patch: Program) -> None:
         self._patch_uid += 1
         patch.id = f"pop_{self._patch_uid}"
-
-    def _is_uniq(self, new: Program, population: list[Program]) -> bool:
-        new_code = ETC.normalize_code(new.code)
-        return all(ETC.normalize_code(p.code) != new_code for p in population)
 
     @staticmethod
     def _syntax_check(program: Program) -> bool:
@@ -57,27 +51,19 @@ class MooRepair:
         except SyntaxError:
             return False
 
-    # ---------------------------------------------------------------- #
-    # Initialization (syntax-check only, no test execution)            #
-    # ---------------------------------------------------------------- #
-
     def _init_population(self, buggy: Program, pop_size: int) -> list[Program]:
         population = []
         tbar = tqdm(total=pop_size, desc="Population", position=1, leave=False)
         while len(population) < pop_size:
             needed = pop_size - len(population)
-            candidates = self.variation.run_init(buggy, self.references, needed)
+            candidates = self.variation.correct(buggy, self.references, needed)
             for patch in candidates:
-                if self._syntax_check(patch) and self._is_uniq(patch, population):
+                if self._syntax_check(patch):
                     self._assign_patch_id(patch)
                     population.append(patch)
                     tbar.update(1)
         tbar.close()
         return population
-
-    # ---------------------------------------------------------------- #
-    # Termination condition (EvoFix §9)                                #
-    # ---------------------------------------------------------------- #
 
     def _termination(self, solutions: list[Program], b_fitness: dict) -> bool:
         """Stop if any individual is fully correct AND faster AND lighter than buggy."""
@@ -105,11 +91,7 @@ class MooRepair:
             self.logger.info(log)
         return early_stop
 
-    # ---------------------------------------------------------------- #
-    # Per-buggy GA run                                                 #
-    # ---------------------------------------------------------------- #
-
-    def _ga_run(self, buggy: Program, generations: int, pop_size: int) -> dict:
+    def _run_single(self, buggy: Program, generations: int, pop_size: int) -> dict:
         result = {}
         solutions = []
         buggy_fitness = Fitness.evaluate(buggy)
@@ -118,8 +100,7 @@ class MooRepair:
         for pop in population:
             results = Tester.run(pop)
             if not Tester.is_all_pass(results): continue
-            if self._is_uniq(pop, solutions):
-                solutions.append(pop)
+            solutions.append(pop)
 
         self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
@@ -131,31 +112,26 @@ class MooRepair:
             self.logger.info(f"=== Generation {gen} ===")
 
             # Selection
-            pairs = Selection.run(population, pop_size)
+            pairs = Selection.run(population, pop_size, self.selection)
 
             # Variation
             offspring = self.variation.run(buggy, pairs)
 
             # Validation
             for child in offspring:
-                if self._syntax_check(child) and self._is_uniq(child, population):
+                if self._syntax_check(child):
                     self._assign_patch_id(child)
                     population.append(child)
                 else: continue
                 
                 results = Tester.run(child)
                 if not Tester.is_all_pass(results): continue
-                if self._is_uniq(child, solutions):
-                    solutions.append(child)
+                solutions.append(child)
 
         return result
 
-    # ---------------------------------------------------------------- #
-    # Public entry point                                               #
-    # ---------------------------------------------------------------- #
-
-    def run(self, generations: int = 5, pop_size: int = 10) -> dict:
+    def run(self, generations: int = 5, pop_size: int = 5) -> dict:
         results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
-            results[buggy.id] = self._ga_run(buggy, generations, pop_size)
+            results[buggy.id] = self._run_single(buggy, generations, pop_size)
         return results

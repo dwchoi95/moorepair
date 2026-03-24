@@ -2,8 +2,6 @@ import os
 import csv
 import shutil
 import pickle
-import time
-import asyncio
 import pandas as pd
 from tqdm import tqdm
 from prettytable import PrettyTable
@@ -11,17 +9,16 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from .moorepair import MooRepair
-from .par import PaR
-from .effilearner import EffiLearner
+from .parel import PaREffiLearner
 from src.llms import Models, Tokenizer
-from src.genetic import Fitness, Selection
+from src.genetic import Selection
 from src.utils import ETC, Loader
 from src.execution import Tester, Programs
 
 
 class Experiments:
     def __init__(self,
-        generations:int=5, pop_size:int=10,
+        generations:int=5, pop_size:int=5, selection:bool=False,
         llm:str="codellama/CodeLlama-7b-Instruct-hf",
         temperature:float=0.8, sampling:bool=False, 
         approach:str="moorepair", reset:bool=False,
@@ -30,6 +27,7 @@ class Experiments:
 
         self.generations = generations
         self.pop_size = pop_size
+        self.selection = selection
         Models.set(model=llm, temperature=temperature)
         Tokenizer.set(llm)
         self.reset = reset
@@ -37,7 +35,8 @@ class Experiments:
 
         self.results_cols = [
             "Approach", "#Gen", "#Buggy", "#Fixed",
-            "%RR", "%f_fail", "%f_time", "%f_mem",
+            "%RR", "ET(s)", "MU(MB)", "TMU(MB*s)",
+            "ΔET(%)", "ΔMU(%)", "ΔTMU(%)",
         ]
         self.experiments_cols = ["ProblemID"] + self.results_cols
 
@@ -45,7 +44,7 @@ class Experiments:
     # Save results                                                     #
     # ---------------------------------------------------------------- #
 
-    def __save_results(self, problemId:int, buggys:Programs, results:dict) -> None:
+    def __save_results(self, problemId:int, buggys:Programs, results:dict):
         """results: {buggy_id: {gen: [Program, ...], ...}, ...}"""
 
         results_dir = os.path.join('results', str(problemId))
@@ -55,7 +54,11 @@ class Experiments:
             pickle.dump(results, f)
 
         generation_stats = {
-            gen: {'fixed': 0, 'f_fail': 0.0, 'f_time': 0.0, 'f_mem': 0.0}
+            gen: {
+                'fixed': 0,
+                'ET': 0.0, 'MU': 0.0, 'TMU': 0.0,
+                'dET': 0.0, 'dMU': 0.0, 'dTMU': 0.0, 'delta_n': 0,
+            }
             for gen in range(1, self.generations + 1)
         }
         final_solutions = []
@@ -66,29 +69,31 @@ class Experiments:
                 continue
             buggy = buggys.get_prog_by_id(b_id)
 
+            # Measure buggy baseline (always valid — buggy runs but fails tests)
+            buggy_results = Tester.run(buggy)
+            buggy_et  = buggy_results.ET()
+            buggy_mu  = buggy_results.MU()
+            buggy_tmu = buggy_results.TMU()
+
             for gen in range(1, self.generations + 1):
                 patches = gen_result.get(gen, [])
                 if not patches:
                     continue
                 patch = Selection.prioritization(patches)
-                if patch.fitness["f_fail"] > 0:
+
+                patch_results = Tester.run(patch)
+                if not Tester.is_all_pass(patch_results):
                     continue
 
                 generation_stats[gen]['fixed'] += 1
+                generation_stats[gen]['ET']  += patch_results.ET()
+                generation_stats[gen]['MU']  += patch_results.MU()
+                generation_stats[gen]['TMU'] += patch_results.TMU()
 
-                # Buggy baseline fitness
-                if buggy.fitness is None:
-                    Tester.run(buggy)
-                    Fitness.evaluate(buggy)
-                b_fail = buggy.fitness["f_fail"]
-                b_time = buggy.fitness["f_time"]
-                b_mem  = buggy.fitness["f_mem"]
-                p_time = patch.fitness["f_time"]
-                p_mem  = patch.fitness["f_mem"]
-
-                generation_stats[gen]['f_fail'] += patch.fitness["f_fail"]
-                generation_stats[gen]['f_time'] += ETC.divide(b_time - p_time, b_time + p_time)
-                generation_stats[gen]['f_mem']  += ETC.divide(b_mem  - p_mem,  b_mem  + p_mem)
+                generation_stats[gen]['dET']  += ETC.divide(buggy_et  - patch_results.ET(),  buggy_et)  * 100
+                generation_stats[gen]['dMU']  += ETC.divide(buggy_mu  - patch_results.MU(),  buggy_mu)  * 100
+                generation_stats[gen]['dTMU'] += ETC.divide(buggy_tmu - patch_results.TMU(), buggy_tmu) * 100
+                generation_stats[gen]['delta_n'] += 1
 
                 if gen == max(gen_result.keys()):
                     final_solutions.append((buggy, patch))
@@ -97,15 +102,26 @@ class Experiments:
         for gen in sorted(generation_stats.keys()):
             stats = generation_stats[gen]
             fixed = stats['fixed']
+            n = max(fixed, 1)
+            dn = stats['delta_n']
+            mean_et  = ETC.divide(stats['ET'],  n)
+            mean_mu  = ETC.divide(stats['MU'],  n)
+            mean_tmu = ETC.divide(stats['TMU'], n)
+            mean_det  = f"{ETC.divide(stats['dET'],  dn):.2f}%" if dn > 0 else "N/A"
+            mean_dmu  = f"{ETC.divide(stats['dMU'],  dn):.2f}%" if dn > 0 else "N/A"
+            mean_dtmu = f"{ETC.divide(stats['dTMU'], dn):.2f}%" if dn > 0 else "N/A"
             table.add_row([
                 self.approach,
                 gen,
                 total_bugs,
                 fixed,
                 f"{ETC.divide(fixed, total_bugs) * 100:.2f}%",
-                f"{ETC.divide(stats['f_fail'], max(fixed, 1)):.4f}",
-                f"{ETC.divide(stats['f_time'], max(fixed, 1)) * 100:.2f}%",
-                f"{ETC.divide(stats['f_mem'],  max(fixed, 1)) * 100:.2f}%",
+                f"{mean_et:.4f}",
+                f"{mean_mu:.4f}",
+                f"{mean_tmu:.4f}",
+                mean_det,
+                mean_dmu,
+                mean_dtmu,
             ])
 
         print(table)
@@ -145,18 +161,26 @@ class Experiments:
         if dff.empty:
             return
 
-        def pct_to_float(x):
-            s = str(x).strip().rstrip("%")
+        def to_float(x):
             try:
-                return float(s)
+                return float(str(x).strip().rstrip("%"))
             except ValueError:
                 return 0.0
 
-        mean_rr       = dff["%RR"].apply(pct_to_float).mean()
-        mean_f_time   = dff["%f_time"].apply(pct_to_float).mean()
-        mean_f_mem    = dff["%f_mem"].apply(pct_to_float).mean()
-        total_bugs    = int(dff["#Buggy"].iloc[0])
-        mean_fixed    = float(dff["#Fixed"].mean())
+        mean_rr  = dff["%RR"].apply(to_float).mean()
+        mean_et  = dff["ET(s)"].apply(to_float).mean()
+        mean_mu  = dff["MU(MB)"].apply(to_float).mean()
+        mean_tmu = dff["TMU(MB*s)"].apply(to_float).mean()
+        total_bugs = int(dff["#Buggy"].iloc[0])
+        mean_fixed = float(dff["#Fixed"].mean())
+
+        def mean_delta(col):
+            valid = dff[col][dff[col] != "N/A"].apply(to_float)
+            return f"{valid.mean():.2f}%" if not valid.empty else "N/A"
+
+        mean_det  = mean_delta("ΔET(%)")
+        mean_dmu  = mean_delta("ΔMU(%)")
+        mean_dtmu = mean_delta("ΔTMU(%)")
 
         overall_path = os.path.join("results", f"overall.csv")
         os.makedirs(os.path.dirname(overall_path), exist_ok=True)
@@ -166,8 +190,12 @@ class Experiments:
             total_bugs,
             f"{mean_fixed:.2f}",
             f"{mean_rr:.2f}%",
-            f"{mean_f_time:.2f}%",
-            f"{mean_f_mem:.2f}%",
+            f"{mean_et:.4f}",
+            f"{mean_mu:.4f}",
+            f"{mean_tmu:.4f}",
+            mean_det,
+            mean_dmu,
+            mean_dtmu,
         ]
         file_exists = os.path.exists(overall_path) and os.path.getsize(overall_path) > 0
         with open(overall_path, mode="a", newline="", encoding="utf-8") as f:
@@ -194,17 +222,13 @@ class Experiments:
             return
 
         log_path = os.path.join('logs', problemId, f'{self.approach}.log')
-        
         Tester.init_globals(testcases, timelimit, memlimit)
         if self.approach == "moorepair":
-            moo_repair = MooRepair(buggys, references, description, log_path)
+            moo_repair = MooRepair(buggys, references, description, self.selection, log_path)
             results = moo_repair.run(self.generations, self.pop_size)
         else:
-            generations = (self.generations+1) * self.pop_size // 2
-            par = PaR(buggys, references, description, log_path)
-            corrects = asyncio.run(par.run(generations))
-            effi_learner = EffiLearner(corrects, description, log_path)
-            results = asyncio.run(effi_learner.run(generations))
+            parel = PaREffiLearner(buggys, references, description, log_path)
+            results = parel.run(self.generations, self.pop_size)
             
         self.__save_results(problemId, buggys, results)
 
@@ -219,7 +243,7 @@ class Experiments:
         for problem in problems:
             problemId = os.path.dirname(problem).split(os.sep)[-1]
             print(f"\n=== {problemId} ===")
-            results_dir = os.path.join('results', str(problemId))
+            results_dir = os.path.join('results', problemId)
             if os.path.exists(results_dir) and self.reset:
                 shutil.rmtree(results_dir)
             self.__core(problem)

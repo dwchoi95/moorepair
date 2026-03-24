@@ -15,14 +15,6 @@ class Fitness:
 
     @staticmethod
     def evaluate(program: Program) -> dict:
-        """Compute and store fitness for *program*.
-
-        Requires program.results to already be populated (via Tester.run).
-        Stores result in program.fitness and returns it.
-        """
-        if program.fitness is not None:
-            return program.fitness
-        
         results = Tester.run(program)
         total = len(results)
         _, failed = Tester.tests_split(results)
@@ -42,5 +34,8 @@ class Fitness:
             f_mem = float("inf")
 
         fitness = {"f_fail": f_fail, "f_time": f_time, "f_mem": f_mem}
+        
+        if program.prev_fitness and program.prev_fitness != fitness:
+            program.prev_fitness = fitness
         program.fitness = fitness
         return fitness

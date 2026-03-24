@@ -27,12 +27,28 @@ class Models:
     @classmethod
     def _post_process(cls, code: str) -> str:
         code = code.strip()
+
+        # 1) [PYTHON] ... [/PYTHON] 태그 추출
+        tag_match = re.search(
+            r"\[PYTHON\]\s*\n?(.*?)\s*\[/PYTHON\]",
+            code,
+            flags=re.DOTALL,
+        )
+        if tag_match:
+            return tag_match.group(1).strip()
+
+        # 2) ```python ... ``` 마크다운 코드 블록 추출
         while code.startswith("```") and code.endswith("```"):
-            m = re.search(r"```(?:[a-zA-Z0-9_+-]+)?[\r\n]+(.*?)```", code, flags=re.DOTALL)
+            m = re.search(
+                r"```(?:[a-zA-Z0-9_+-]+)?[\r\n]+(.*?)```",
+                code,
+                flags=re.DOTALL,
+            )
             if m:
                 code = m.group(1).strip()
             else:
                 break
+
         return code
     
     @classmethod

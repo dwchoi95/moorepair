@@ -2,6 +2,7 @@ import json
 import sys
 import subprocess
 import multiprocessing
+import tempfile
 import warnings
 from decimal import Decimal, InvalidOperation
 from functools import cache
@@ -64,7 +65,7 @@ def main():
         entry["hits"] += 1
         entry["runtime"] += runtime
         entry["memory"] = mem
-        entry["statement"] = code_lines[lineno - 1].strip() if 0 < lineno <= len(code_lines) else ""
+        entry["statement"] = code_lines[lineno - 1] if 0 < lineno <= len(code_lines) else ""
 
     def tracer(frame, event, arg):
         if frame.f_code.co_filename != "<student_code>":
@@ -231,28 +232,30 @@ class Tester:
         memory = cls.memlimit
         profile = {}
         try:
-            completed = subprocess.run(
-                [sys.executable, "-c", _SUBPROCESS_RUNNER],
-                input=payload,
-                text=True,
-                capture_output=True,
-                timeout=None if profiling else cls.timelimit,
-                check=False,
-            )
-            raw_response = completed.stdout.strip()
-            response = json.loads(raw_response)
-            stdout = str(response.get("stdout", ""))
-            stderr = str(response.get("stderr", ""))
-            runtime = float(response.get("runtime", 0.0))
-            memory = float(response.get("memory", 0.0))
-            raw_profile = response.get("profile", {})
-            profile = {}
-            if isinstance(raw_profile, dict):
-                for lineno, value in raw_profile.items():
-                    try:
-                        profile[int(lineno)] = value
-                    except (TypeError, ValueError):
-                        continue
+            with tempfile.TemporaryDirectory() as tmpdir:
+                completed = subprocess.run(
+                    [sys.executable, "-c", _SUBPROCESS_RUNNER],
+                    input=payload,
+                    text=True,
+                    capture_output=True,
+                    timeout=None if profiling else cls.timelimit,
+                    check=False,
+                    cwd=tmpdir,
+                )
+                raw_response = completed.stdout.strip()
+                response = json.loads(raw_response)
+                stdout = str(response.get("stdout", ""))
+                stderr = str(response.get("stderr", ""))
+                runtime = float(response.get("runtime", 0.0))
+                memory = float(response.get("memory", 0.0))
+                raw_profile = response.get("profile", {})
+                profile = {}
+                if isinstance(raw_profile, dict):
+                    for lineno, value in raw_profile.items():
+                        try:
+                            profile[int(lineno)] = value
+                        except (TypeError, ValueError):
+                            continue
         except Exception as exc:
             status = Status.ERROR
 

@@ -1,37 +1,9 @@
 import logging
 from pathlib import Path
 from tqdm import tqdm
-from src.llms import Models
+from src.llms import Models, prompts
 from src.genetic import Fitness
 from src.execution import Programs, Program, Tester, Status
-
-SYSTEM = '''Optimize the efficiency of the following Python code based on the task, test case, and overhead analysis provided. Ensure the optimized code can pass the given test case.'''
-
-USER = '''\
-Task Description:
-{description}
-
-Test Case:
-{test_case}
-
-Original Code:
-```python
-{original_code}
-```
-
-Overhead Analysis:
-The total memory usage during the code execution is: {total_memory_usage} MB*s.
-The total execution time is: {total_execution_time} s.
-The maximum memory peak requirement is: {max_memory_usage} MB.
-# The profiler results are: 
-# {reports}
-
-Optimization Rules:
-- Encapsulate the optimized code within a Python code block (i.e., ```python\n[Your Code Here]\n```).
-- Do not include the test case within the code block.
-- Focus solely on code optimization; test cases are already provided.
-- Ensure the provided test case passes with your optimized solution.
-'''
 
 
 class EffiLearner:
@@ -77,8 +49,8 @@ class EffiLearner:
             self.logger.info(f"=== Generation {gen} ===")
             results = Tester.run(correct, profiling=True)
             patch = await Models.run(
-                system=SYSTEM,
-                user=USER.format(
+                system=prompts.EFFILEARNER_SYSTEM,
+                user=prompts.EFFILEARNER_USER.format(
                     description=self.description,
                     test_case=str(Tester.testcases),
                     original_code=correct.code,
