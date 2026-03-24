@@ -337,9 +337,9 @@ class Variation:
     async def _run_init_async(self, buggy: Program, references: list[Program], count: int) -> list[Program]:
         """Generate *count* initial candidates (syntax-only validation done in GA)."""
         if len(references) >= count:
-            selected = Randoms.sample(references, count)
+            selected = Randoms.sample(list(references), count)
         else:
-            selected = [Randoms.choice(references) for _ in range(count)]
+            selected = [Randoms.choice(list(references)) for _ in range(count)]
         tasks = [asyncio.create_task(self._task(buggy, refer)) for refer in selected]
 
         programs = []

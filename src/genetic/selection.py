@@ -112,8 +112,8 @@ class Selection:
     # Step 3: Parent Selection via Complementarity                       #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _compute_thresholds(population: list[Program]) -> tuple[float, float]:
+    @classmethod
+    def _compute_thresholds(cls, population: list[Program]) -> tuple[float, float]:
         """θ_time and θ_mem as population-wide median (per test case)."""
         times, mems = [], []
         for p in population:
@@ -127,8 +127,8 @@ class Selection:
         theta_mem  = statistics.median(mems)  if mems  else 0.0
         return theta_time, theta_mem
 
-    @staticmethod
-    def _weakness_set(
+    @classmethod    
+    def _weakness_set(cls,
        p: Program, strategy: str, theta_time: float, theta_mem: float
     ) -> set:
         """S1: test cases where p is weak according to strategy."""
@@ -147,6 +147,7 @@ class Selection:
                 s1.add(tc.id)
         return s1
 
+    @classmethod
     def _strength_set(
         cls, p: Program, strategy: str, theta_time: float, theta_mem: float
     ) -> set:
@@ -166,6 +167,7 @@ class Selection:
                 s2.add(tc.id)
         return s2
 
+    @classmethod
     def _complementarity(
         cls,
         p1: Program,
@@ -181,6 +183,7 @@ class Selection:
         s2 = cls._strength_set(p2, strategy, theta_time, theta_mem)
         return len(s1 & s2) / len(s1)
 
+    @classmethod
     def _representative_testcase(
         cls,
         p1: Program,
@@ -215,6 +218,7 @@ class Selection:
         )
         return p1_by_id[best_id].testcase
     
+    @classmethod
     def _get_pair(cls, p1: Program, candidates: list[Program], strategy: str, theta_time: float, theta_mem: float, n: int) -> Program:
         # Score each candidate by complementarity
         scores = [
@@ -242,6 +246,7 @@ class Selection:
                     break
         return p2
 
+    @classmethod
     def build_pairs(
         cls, population: list[Program]
     ) -> list[tuple[Program, Program, TestCase | None]]:
@@ -260,6 +265,7 @@ class Selection:
             pairs.append((p1, p2, t_star))
         return pairs
     
+    @classmethod
     def run(cls, population: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
         """Run the full selection process and return (p1, p2, t*) pairs."""
         population = cls.survivor_selection(population, pop_size)
