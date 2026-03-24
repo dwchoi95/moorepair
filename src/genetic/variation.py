@@ -31,8 +31,7 @@ class Variation:
             total_memory_usage=results.mem_usage(),
             total_execution_time=results.exec_time(),
             max_memory_usage=results.mem_usage_max(),
-            mem_usage_report=results.report_mem(),
-            exec_time_report=results.report_time(),
+            profile_report=results.report(),
         )
         return system, user
     

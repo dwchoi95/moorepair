@@ -56,9 +56,7 @@ The total memory usage during the code execution is: {total_memory_usage} MB*s.
 The total execution time is: {total_execution_time} s.
 The maximum memory peak requirement is: {max_memory_usage} MB.
 # The profiler results are: 
-{mem_usage_report}
-
-{exec_time_report}
+{profile_report}
 
 Optimization Rules:
 - Encapsulate the optimized code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```).
