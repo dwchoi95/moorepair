@@ -239,7 +239,7 @@ class Results:
         max_runtime = 0.0
         max_runtime_tr = None
         for tr in self.ts:
-            if tr.testcase.id == tc.id:
+            if tc and tr.testcase.id == tc.id:
                 return tr.result.time_report()
             if tr.result and tr.result.runtime > max_runtime:
                 max_runtime = tr.result.runtime
@@ -252,7 +252,7 @@ class Results:
         max_memory = 0.0
         max_memory_tr = None
         for tr in self.ts:
-            if tr.testcase.id == tc.id:
+            if tc and tr.testcase.id == tc.id:
                 return tr.result.mem_report()
             if tr.result and tr.result.memory > max_memory:
                 max_memory = tr.result.memory
