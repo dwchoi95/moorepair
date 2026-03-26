@@ -54,7 +54,7 @@ class BenchmarkBuilder:
     @classmethod
     def load_submissions(cls, valid_ids: set, language: str | None) -> dict:
         print("Loading codeforces submissions...")
-        subs_ds = load_dataset("open-r1/codeforces-submissions", name="default", split="train")
+        subs_ds = load_dataset("open-r1/codeforces-submissions", split="train")
         subs_ds = subs_ds.filter(
             lambda row: (
                 row["problem_id"] in valid_ids

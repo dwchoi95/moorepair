@@ -4,7 +4,7 @@
 
 # ------------------------------------------------------------------ #
 # PaR — Peer-aided Repair                                            #
-# Used by: baselines/par.py, genetic/variation.py (initialization)   #
+# Used by: baselines/parel.py, genetic/variation.py (initialization) #
 # ------------------------------------------------------------------ #
 
 PAR_SYSTEM = '''\
@@ -15,7 +15,14 @@ problem. Please fix the buggy code and return the correct code.
 '''
 
 PAR_USER = '''\
+[Problem Description]
 {description}
+
+[Input Format]
+{input_format}
+
+[Output Format]
+{output_format}
 
 [Reference Code]
 {reference_program}
@@ -31,7 +38,7 @@ Please fix the code and return the correct code.
 
 # ------------------------------------------------------------------ #
 # EffiLearner — Efficiency Self-Optimization                         #
-# Used by: baselines/effilearner.py                                  #
+# Used by: baselines/parel.py                                        #
 # ------------------------------------------------------------------ #
 
 EFFILEARNER_SYSTEM = '''\
@@ -42,6 +49,12 @@ and overhead analysis provided. Ensure the optimized code can pass the given tes
 EFFILEARNER_USER = '''\
 Task Description:
 {description}
+
+Input Format:
+{input_format}
+
+Output Format:
+{output_format}
 
 Test Case:
 {test_case}
@@ -55,8 +68,10 @@ Overhead Analysis:
 The total memory usage during the code execution is: {total_memory_usage} MB*s.
 The total execution time is: {total_execution_time} s.
 The maximum memory peak requirement is: {max_memory_usage} MB.
-# The profiler results are: 
-{profile_report}
+The line_profiler results are: 
+{line_profiler_results}
+The memory profiler results are: 
+{memory_report}
 
 Optimization Rules:
 - Encapsulate the optimized code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```).
@@ -77,30 +92,34 @@ Given two programs solving the same problem, \
 you combine their strengths to produce one correct program. \
 Identify which parts of each program are correct and merge them. \
 Output the complete merged program, not a diff or patch. \
-Wrap your merged code in [PYTHON] and [/PYTHON] tags.\
+Wrap your merged code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 CROSS_FAIL_USER = '''\
+# Problem Description
 {description}
 
-[Failing Case]
+# Input Format
+{input_format}
+
+# Output Format
+{output_format}
+
+# Failed Test Case
 {test_case}
-[/Failing Case]
 
-[Program A]
-[PYTHON]
+# Program A
+```python
 {p1_code}
-[/PYTHON]
-[/Program A]
+```
 
-[Program B]
-[PYTHON]
+# Program B
+```python
 {p2_code}
-[/PYTHON]
-[/Program B]
+```
 
 Adopt the correct logic from the better program.
-Return ONLY the merged Python program in [PYTHON] and [/PYTHON] tags.\
+Return ONLY the merged Python program within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 
@@ -111,37 +130,33 @@ you combine them to produce a faster version. \
 Adopt the faster algorithm or data structure from the better program \
 while keeping the merged code correct. \
 Output the complete merged program, not a diff or patch. \
-Wrap your merged code in [PYTHON] and [/PYTHON] tags.\
+Wrap your merged code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 CROSS_TIME_USER = '''\
-[Test Case]
+# Failed Test Case
 {test_case}
-[/Test Case]
 
-[Program A]
-[PYTHON]
+# Program A
+```python
 {p1_code}
-[/PYTHON]
-[/Program A]
+```
 
-[Program A Profile]
+## Program A Profile
 {p1_profile}
-[/Program A Profile]
 
-[Program B]
-[PYTHON]
+
+# Program B
+```python
 {p2_code}
-[/PYTHON]
-[/Program B]
+```
 
-[Program B Profile]
+## Program B Profile
 {p2_profile}
-[/Program B Profile]
 
 Adopt the faster approach from B into A's structure.
 Do not break correctness.
-Return ONLY the merged Python program in [PYTHON] and [/PYTHON] tags.\
+Return ONLY the merged Python program within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 
@@ -152,37 +167,33 @@ you combine them to produce a more memory-efficient version. \
 Adopt the memory-efficient approach from the better program \
 while keeping the merged code correct. \
 Output the complete merged program, not a diff or patch. \
-Wrap your merged code in [PYTHON] and [/PYTHON] tags.\
+Wrap your merged code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 CROSS_MEM_USER = '''\
-[Test Case]
+# Failed Test Case
 {test_case}
-[/Test Case]
 
-[Program A]
-[PYTHON]
+# Program A
+```python
 {p1_code}
-[/PYTHON]
-[/Program A]
+```
 
-[Program A Profile]
+## Program A Profile
 {p1_profile}
-[/Program A Profile]
 
-[Program B]
-[PYTHON]
+
+## Program B
+```python
 {p2_code}
-[/PYTHON]
-[/Program B]
+```
 
-[Program B Profile]
+## Program B Profile
 {p2_profile}
-[/Program B Profile]
 
 Adopt the memory-efficient approach from B into A's structure.
 Do not break correctness.
-Return ONLY the merged Python program in [PYTHON] and [/PYTHON] tags.\
+Return ONLY the merged Python program within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 
@@ -197,22 +208,29 @@ You find and fix logical errors with minimal changes. \
 Preserve the original code structure and only modify \
 the lines responsible for the bug. \
 Output the complete corrected program, not a diff or patch. \
-Wrap your corrected code in [PYTHON] and [/PYTHON] tags.\
+Wrap your corrected code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 MUT_FAIL_USER = '''\
+# Problem Description
 {description}
 
-[Failing Case]
-{test_case}
-[/Failing Case]
+# Input Format
+{input_format}
 
-[PYTHON]
+# Output Format
+{output_format}
+
+# Failed Test Case
+{test_case}
+
+# Original Code
+```python
 {code}
-[/PYTHON]
+```
 
 Write the corrected version of the code above.
-Return ONLY the complete Python program in [PYTHON] and [/PYTHON] tags.\
+Return ONLY the complete Python program within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 
@@ -221,22 +239,29 @@ You are a Python performance specialist. \
 You optimize code for speed while preserving correctness. \
 Prefer algorithmic improvements over optimizations. \
 Output the complete optimized program, not a diff or patch. \
-Wrap your optimized code in [PYTHON] and [/PYTHON] tags.\
+Wrap your optimized code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 MUT_TIME_USER = '''\
+# Problem Description
 {description}
 
-[Profile]
-{profile}
-[/Profile]
+# Input Format
+{input_format}
 
-[PYTHON]
+# Output Format
+{output_format}
+
+# Profile
+{profile}
+
+# Original Code
+```python
 {code}
-[/PYTHON]
+```
 
 Reduce execution time. Do not break correctness.
-Return ONLY the optimized Python program in [PYTHON] and [/PYTHON] tags.\
+Return ONLY the optimized Python program within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 
@@ -245,20 +270,27 @@ You are a Python performance specialist. \
 You reduce peak memory usage while preserving correctness. \
 Prefer in-place operations, generators, and compact data structures. \
 Output the complete optimized program, not a diff or patch. \
-Wrap your optimized code in [PYTHON] and [/PYTHON] tags.\
+Wrap your optimized code within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''
 
 MUT_MEM_USER = '''\
+# Problem Description
 {description}
 
-[Profile]
-{profile}
-[/Profile]
+# Input Format
+{input_format}
 
-[PYTHON]
+# Output Format
+{output_format}
+
+# Profile
+{profile}
+
+# Original Code
+```python
 {code}
-[/PYTHON]
+```
 
 Reduce peak memory usage. Do not break correctness.
-Return ONLY the optimized Python program in [PYTHON] and [/PYTHON] tags.\
+Return ONLY the optimized Python program within a Python code block (i.e., ```python\\n[Your Code Here]\\n```)\
 '''

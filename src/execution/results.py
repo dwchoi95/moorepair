@@ -235,41 +235,29 @@ class Results:
         """Total Memory Usage: sum of memory * runtime across all test cases (MB*s)."""
         return sum(tr.result.memory * tr.result.runtime for tr in self.ts if tr.result)
     
-    def report_time(self, tc:TestCase) -> str:
+    def report_time(self, tc:TestCase|None=None) -> str:
+        max_runtime = 0.0
+        max_runtime_tr = None
         for tr in self.ts:
             if tr.testcase.id == tc.id:
                 return tr.result.time_report()
+            if tr.result and tr.result.runtime > max_runtime:
+                max_runtime = tr.result.runtime
+                max_runtime_tr = tr
+        if max_runtime_tr:
+            return max_runtime_tr.result.time_report()
         return f"No time report found for TestCase ID: {tc.id}"
 
-    def report_mem(self, tc:TestCase) -> str:
+    def report_mem(self, tc:TestCase|None=None) -> str:
+        max_memory = 0.0
+        max_memory_tr = None
         for tr in self.ts:
             if tr.testcase.id == tc.id:
                 return tr.result.mem_report()
+            if tr.result and tr.result.memory > max_memory:
+                max_memory = tr.result.memory
+                max_memory_tr = tr
+        if max_memory_tr:
+            return max_memory_tr.result.mem_report()
         return f"No memory report found for TestCase ID: {tc.id}"
     
-    def report(self) -> str:
-        valid = [tr for tr in self.ts if tr.result and tr.result.profile]
-        if not valid:
-            return {}
-
-        runtimes = [tr.result.runtime for tr in valid]
-        memories = [tr.result.memory for tr in valid]
-
-        rt_min, rt_max = min(runtimes), max(runtimes)
-        mem_min, mem_max = min(memories), max(memories)
-
-        rt_range = rt_max - rt_min
-        mem_range = mem_max - mem_min
-
-        best_tr = None
-        best_score = -1.0
-
-        for tr in valid:
-            norm_rt = (tr.result.runtime - rt_min) / rt_range if rt_range else 0.0
-            norm_mem = (tr.result.memory - mem_min) / mem_range if mem_range else 0.0
-            score = norm_rt + norm_mem
-            if score > best_score:
-                best_score = score
-                best_tr = tr
-
-        return best_tr.result.profile_report()

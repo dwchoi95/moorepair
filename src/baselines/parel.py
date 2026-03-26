@@ -15,13 +15,13 @@ class PaREffiLearner:
         self,
         buggys: Programs,
         references: Programs,
-        description: str,
+        assignement: dict,
         log_path: str = "logs/temp.log",
     ):
         self.buggys = buggys
         self.references = references
-        self.description = description
-        self.variation = Variation(description)
+        self.assignement = assignement
+        self.variation = Variation(assignement)
         self._patch_uid = 0
 
         log_path = Path(log_path)
@@ -41,6 +41,13 @@ class PaREffiLearner:
         self.bm25 = BM25Okapi([
             self._anonymize_code(ref.code).split() 
             for ref in self.references])
+        
+    def _syntax_check(self, program: Program) -> bool:
+        try:
+            ast.parse(program.code)
+            return True
+        except Exception: pass
+        return False
     
     def _match_tc(self, buggy: Program, reference: Program) -> float:
         """Test Cases Pass Match Score: 2 * clip / (count_correct + count_buggy)"""
@@ -129,27 +136,27 @@ class PaREffiLearner:
         for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
             result.setdefault(gen, solutions.copy())
             self.logger.info(f"=== Generation {gen} ===")
-            valids = []
-            corrects = self.variation.correct(buggy, [reference], pop_size)
-            for patch in corrects:
-                results = Tester.run(patch)
+            patch = self.variation.correct(buggy, [reference])
+            if not patch: continue
+            patch = patch[0]
+            passed = False
+            if self._syntax_check(patch):
+                results = Tester.run(patch, profiling=True)
                 passed = Tester.is_all_pass(results)
-                self.logger.info(
-                    f"PaR: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
-                if passed:
-                    results = Tester.run(patch, profiling=True)
-                    valids.append(patch)
+            self.logger.info(
+                f"PaR: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
+            if not passed: continue
+            valids = [patch] * pop_size
             efficients = self.variation.efficient(valids)
             for patch in efficients:
                 results = Tester.run(patch)
                 passed = Tester.is_all_pass(results)
+                if passed: solutions.append(patch)
                 self.logger.info(
                     f"EffiLearner: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
-                if passed:
-                    solutions.append(patch)
         return result
                     
-    def run(self, generations: int = 5, pop_size: int = 5) -> dict:
+    def run(self, generations: int = 5, pop_size: int = 6) -> dict:
         results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
             results[buggy.id] = self._run_single(buggy, generations, pop_size)

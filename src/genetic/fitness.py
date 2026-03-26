@@ -34,8 +34,6 @@ class Fitness:
             f_mem = float("inf")
 
         fitness = {"f_fail": f_fail, "f_time": f_time, "f_mem": f_mem}
-        
-        if program.prev_fitness and program.prev_fitness != fitness:
-            program.prev_fitness = fitness
+
         program.fitness = fitness
         return fitness

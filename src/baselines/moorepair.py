@@ -5,7 +5,6 @@ from tqdm import tqdm
 
 from ..genetic import Selection, Variation, Fitness
 from ..execution import Program, Programs, Tester
-from ..utils import ETC
 
 
 class MooRepair:
@@ -13,14 +12,14 @@ class MooRepair:
         self,
         buggys: Programs,
         references: Programs,
-        description: str,
+        assignment: dict,
         selection: bool,
         log_path: str = "logs/temp.log",
     ):
         self.buggys = buggys
         self.references = references
         self.selection = selection
-        self.variation = Variation(description)
+        self.variation = Variation(assignment)
         self._patch_uid = 0
 
         log_path = Path(log_path)
@@ -41,22 +40,22 @@ class MooRepair:
         self._patch_uid += 1
         patch.id = f"pop_{self._patch_uid}"
 
-    @staticmethod
-    def _syntax_check(program: Program) -> bool:
-        if program.ext.lower() != "py":
-            return False
+    def _syntax_check(self, program: Program) -> bool:
         try:
             ast.parse(program.code)
             return True
-        except SyntaxError:
-            return False
+        except Exception: pass
+        return False
 
     def _init_population(self, buggy: Program, pop_size: int) -> list[Program]:
         population = []
         tbar = tqdm(total=pop_size, desc="Population", position=1, leave=False)
         while len(population) < pop_size:
+            references = []
             needed = pop_size - len(population)
-            candidates = self.variation.correct(buggy, self.references, needed)
+            for _ in range(needed):
+                references.append(Selection.one(buggy, self.references, self.selection))
+            candidates = self.variation.correct(buggy, references)
             for patch in candidates:
                 if self._syntax_check(patch):
                     self._assign_patch_id(patch)
@@ -115,7 +114,7 @@ class MooRepair:
             pairs = Selection.run(population, pop_size, self.selection)
 
             # Variation
-            offspring = self.variation.run(buggy, pairs)
+            offspring = self.variation.run(pairs)
 
             # Validation
             for child in offspring:
@@ -130,7 +129,7 @@ class MooRepair:
 
         return result
 
-    def run(self, generations: int = 5, pop_size: int = 5) -> dict:
+    def run(self, generations: int = 4, pop_size: int = 6) -> dict:
         results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
             results[buggy.id] = self._run_single(buggy, generations, pop_size)

@@ -11,12 +11,6 @@ class Loader:
     def run(self, problem:str) -> tuple[str, str, int, int, Programs, Programs, TestCases]:
         dataset = json.loads(open(problem, 'r').read())
         assignment = dataset['assignment']
-        problemId = assignment['id'].replace("/", "_")
-        description = assignment['description']
-        input_format = assignment['input_format']
-        output_format = assignment['output_format']
-        interaction_format = assignment['interaction_format']
-        note = assignment['note']
         timelimit = int(assignment['time_limit'])
         memlimit = int(assignment['memory_limit'])
 
@@ -44,15 +38,6 @@ class Loader:
         
         testcases = TestCases(dataset['test_cases'])
 
-        description = f"Problem Description:\n{description}"
-        if input_format:
-            description += f"\n\nInput Format:\n{input_format}"
-        if output_format:
-            description += f"\n\nOutput Format:\n{output_format}"
-        if interaction_format:
-            description += f"\n\nInteraction Format:\n{interaction_format}"
-        if note:
-            description += f"\n\nNote:\n{note}"
 
-        return problemId, description, timelimit, memlimit, buggys, references, testcases
+        return assignment, timelimit, memlimit, buggys, references, testcases
     

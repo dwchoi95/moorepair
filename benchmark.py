@@ -1,6 +1,6 @@
 import argparse
 
-from src.benchmark import BenchmarkBuilder, BenchmarkVerifier
+from src.benchmark import BenchmarkBuilder, BenchmarkSummary, BenchmarkVerifier
 
 
 class BenchmarkCLI:
@@ -15,6 +15,8 @@ class BenchmarkCLI:
 
         verify_parser = subparsers.add_parser("verify", help="Verify benchmark verdicts")
         verify_parser.add_argument("--problem", type=str, default=None)
+
+        subparsers.add_parser("summary", help="Show benchmark dataset summary")
 
         return parser
 
@@ -34,6 +36,10 @@ class BenchmarkCLI:
             BenchmarkVerifier.run(
                 problem=args.problem,
             )
+            return
+
+        if args.command == "summary":
+            BenchmarkSummary.run()
             return
 
 

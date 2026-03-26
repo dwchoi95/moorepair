@@ -6,7 +6,7 @@ from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.core.population import Population
 
 from .fitness import Fitness
-from ..execution import Program, TestCase, Status
+from ..execution import Program, TestCase, Status, Tester
 from ..utils import ETC, Randoms
 
 class Selection:
@@ -63,11 +63,11 @@ class Selection:
         return [p for p in population if p.id in selected_ids]
 
     # ------------------------------------------------------------------ #
-    # Step 2: Edit Action (Strategy) Selection via SUS                   #
+    # Step 2: Repair Strategy Selection via SUS                          #
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def assign_strategy(cls, p: Program):
+    def repair_strategy(cls, p: Program):
         """Assign p.strategy to each individual using SUS on improvement rates."""
         if p.prev_fitness is None:
             # First generation: uniform weights
@@ -116,7 +116,7 @@ class Selection:
         times, mems = [], []
         for p in population:
             if p.results is None:
-                continue
+                Tester.run(p, profiling=True)
             for tr in p.results:
                 if tr.result:
                     times.append(tr.result.runtime)
@@ -131,7 +131,7 @@ class Selection:
     ) -> set:
         """S1: test cases where p is weak according to strategy."""
         if p.results is None:
-            return set()
+            Tester.run(p, profiling=True)
         s1 = set()
         for tr in p.results:
             if tr.result is None:
@@ -151,7 +151,7 @@ class Selection:
     ) -> set:
         """S2: test cases where p is strong according to strategy."""
         if p.results is None:
-            return set()
+            Tester.run(p, profiling=True)
         s2 = set()
         for tr in p.results:
             if tr.result is None:
@@ -195,7 +195,7 @@ class Selection:
         s2 = cls._strength_set(p2, strategy, theta_time, theta_mem)
         overlap_ids = s1 & s2
         if not overlap_ids:
-            return None
+            return Randoms.choice(Tester.testcases)
 
         # Build lookup for p1 test results by tc id
         p1_by_id = {tr.testcase.id: tr for tr in p1.results if tr.result}
@@ -232,7 +232,7 @@ class Selection:
 
         total_w = sum(weights)
         if total_w == 0.0:
-            p2 = Randoms.choice(candidates)
+            return None
         else:
             r = Randoms.uniform(0, total_w)
             cumulative = 0.0
@@ -251,16 +251,19 @@ class Selection:
         """Build (p1, p2, t*) pairs using complementarity rank sampling."""
         theta_time, theta_mem = cls._compute_thresholds(population)
         pairs = []
-        n = len(population)
+        pop_size = len(population)
 
+        Randoms.shuffle(population)  # Randomize order to avoid bias
         for p1 in population:
             strategy = p1.strategy or "f_fail"
             candidates = [p for p in population if p.id != p1.id]
-            if not candidates:
-                continue
-            p2 = cls._get_pair(p1, candidates, strategy, theta_time, theta_mem, n)
+            if not candidates: continue
+            p2 = cls._get_pair(p1, candidates, strategy, theta_time, theta_mem, pop_size)
+            if not p2: continue
             t_star = cls._representative_testcase(p1, p2, strategy, theta_time, theta_mem)
             pairs.append((p1, p2, t_star))
+            # Limit number of pairs to half the population size
+            if len(pairs) >= pop_size // 2: break
         return pairs
     
     @classmethod
@@ -273,18 +276,19 @@ class Selection:
             for p1 in population:
                 p1.strategy = Randoms.choice(cls.STRATEGIES)
                 candidates = [p for p in population if p.id != p1.id]
-                if not candidates:
-                    continue
+                if not candidates: continue
+                candidates.append(None)
                 p2 = Randoms.choice(candidates)
-                testcases = [tr.testcase for tr in p1.results if tr.result]
-                testcases.append(None)
-                t_star = Randoms.choice(testcases)
+                if p2 is None: continue
+                t_star = Randoms.choice(Tester.testcases)
                 pairs.append((p1, p2, t_star))
+                # Limit number of pairs to half the population size
+                if len(pairs) >= pop_size // 2: break
             return pairs
         
         population = cls.survivor_selection(population, pop_size)
         for p in population:
-            cls.assign_strategy(p)
+            cls.repair_strategy(p)
         return cls.build_pairs(population)
     
     # ---------------------------------------------------------------- #
@@ -292,8 +296,11 @@ class Selection:
     # ---------------------------------------------------------------- #
     
     @classmethod
-    def one(cls, buggy: Program, references: list[Program]) -> Program:
+    def one(cls, buggy: Program, references: list[Program], selection: bool) -> Program:
         """Select a single reference program from the provided list."""
+        if selection: # Random selection
+            return Randoms.choice(references)
+        cls.repair_strategy(buggy)
         theta_time, theta_mem = cls._compute_thresholds(references)
         p2 = cls._get_pair(buggy, references, buggy.strategy, theta_time, theta_mem, len(references)+1)
         return p2
@@ -304,16 +311,15 @@ class Selection:
 
     @classmethod
     def prioritization(cls, population: list[Program]) -> Program | None:
-        """Pick the program with the smallest mean of min-max normalized (ET, MU, TMU).
+        """Pick the program with the smallest mean of min-max normalized (f_time, f_mem).
         Assumes all programs in population have already passed all test cases."""
         if not population:
             return None
         if len(population) == 1:
             return population[0]
 
-        et_vals  = [p.results.ET()  for p in population]
-        mu_vals  = [p.results.MU()  for p in population]
-        tmu_vals = [p.results.TMU() for p in population]
+        time_vals = [p.fitness["f_time"] for p in population]
+        mem_vals  = [p.fitness["f_mem"]  for p in population]
 
         def _normalize(vals: list[float]) -> list[float]:
             lo, hi = min(vals), max(vals)
@@ -321,9 +327,8 @@ class Selection:
                 return [0.0] * len(vals)
             return [(v - lo) / (hi - lo) for v in vals]
 
-        et_n  = _normalize(et_vals)
-        mu_n  = _normalize(mu_vals)
-        tmu_n = _normalize(tmu_vals)
+        time_n = _normalize(time_vals)
+        mem_n  = _normalize(mem_vals)
 
-        scores = [ETC.divide(et_n[i] + mu_n[i] + tmu_n[i], 3.0) for i in range(len(population))]
+        scores = [ETC.divide(time_n[i] + mem_n[i], 2.0) for i in range(len(population))]
         return population[int(np.argmin(scores))]
