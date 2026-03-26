@@ -238,7 +238,7 @@ class Tester:
                     input=payload,
                     text=True,
                     capture_output=True,
-                    timeout=cls.timelimit*100 if profiling else cls.timelimit,
+                    timeout=cls.timelimit*10 if profiling else cls.timelimit,
                     check=False,
                     cwd=tmpdir,
                 )

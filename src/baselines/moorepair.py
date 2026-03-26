@@ -18,8 +18,8 @@ class MooRepair:
     ):
         self.buggys = buggys
         self.references = references
-        self.selection = selection
         self.variation = Variation(assignment)
+        self.selection = Selection(selection)
         self._patch_uid = 0
 
         log_path = Path(log_path)
@@ -54,7 +54,7 @@ class MooRepair:
             references = []
             needed = pop_size - len(population)
             for _ in range(needed):
-                references.append(Selection.one(buggy, self.references, self.selection))
+                references.append(self.selection.one(buggy, self.references))
             candidates = self.variation.correct(buggy, references)
             for patch in candidates:
                 if self._syntax_check(patch):
@@ -79,9 +79,9 @@ class MooRepair:
 
             log = f"Patch {i}: CORR: {s_fail:.2f} | RUN: {s_time:.2f} | MEM: {s_mem:.2f}"
             
-            delta_fail = Selection.delta(b_fail, s_fail)
-            delta_time = Selection.delta(b_time, s_time)
-            delta_mem  = Selection.delta(b_mem,  s_mem)
+            delta_fail = self.selection.delta(b_fail, s_fail)
+            delta_time = self.selection.delta(b_time, s_time)
+            delta_mem  = self.selection.delta(b_mem,  s_mem)
 
             if delta_fail == 1.0 and delta_time > 0 and delta_mem > 0:
                 log += f" >>> Early Stopped!"
@@ -111,7 +111,9 @@ class MooRepair:
             self.logger.info(f"=== Generation {gen} ===")
 
             # Selection
-            pairs = Selection.run(population, pop_size, self.selection)
+            survivors = self.selection.survivor_selection(population, pop_size)
+            self.selection.repair_strategy(survivors)
+            pairs = self.selection.parent_pairs(survivors)
 
             # Variation
             offspring = self.variation.run(pairs)
@@ -120,12 +122,15 @@ class MooRepair:
             for child in offspring:
                 if self._syntax_check(child):
                     self._assign_patch_id(child)
-                    population.append(child)
+                    survivors.append(child)
                 else: continue
                 
                 results = Tester.run(child)
                 if not Tester.is_all_pass(results): continue
                 solutions.append(child)
+            
+            # Prepare next generation
+            population = survivors
 
         return result
 

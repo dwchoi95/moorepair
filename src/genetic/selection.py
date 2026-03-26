@@ -13,14 +13,16 @@ class Selection:
     """EvoFix three-step selection.
 
     Step 1 – survivor_selection: NSGA-II on (f_fail, f_time, f_mem)
-    Step 2 – assign_strategies:  SUS based on per-objective improvement rates
-    Step 3 – build_pairs:        complementarity-based rank sampling → (p1, p2, t*)
+    Step 2 – repair_strategy:    SUS based on per-objective improvement rates
+    Step 3 – parent_pairs:       complementarity-based rank sampling → (p1, p2, t*)
     """
 
     STRATEGIES = ["f_fail", "f_time", "f_mem"]
 
-    @classmethod
-    def delta(cls, before: float, after: float) -> float:
+    def __init__(self, selection: bool = False):
+        self.random_sel = selection
+
+    def delta(self, before: float, after: float) -> float:
         """Improvement rate ∈ [-1, 1]; 0 when denominator is zero."""
         denom = before + after
         if denom == 0.0:
@@ -31,12 +33,16 @@ class Selection:
     # Step 1: Survivor Selection (NSGA-II)                               #
     # ------------------------------------------------------------------ #
 
-    @classmethod
-    def survivor_selection(cls, population: list[Program], pop_size: int) -> list[Program]:
+    def survivor_selection(self, population: list[Program], pop_size: int) -> list[Program]:
         """Keep *pop_size* individuals using NSGA-II Pareto ranking + crowding distance."""
         if len(population) <= pop_size:
             return population
 
+        fitnesses = [Fitness.evaluate(p) for p in population]
+
+        if self.random_sel: # Random selection
+            return Randoms.sample(population, pop_size)
+            
         keys = [p.id for p in population]
         F = np.array(
             [
@@ -66,52 +72,51 @@ class Selection:
     # Step 2: Repair Strategy Selection via SUS                          #
     # ------------------------------------------------------------------ #
 
-    @classmethod
-    def repair_strategy(cls, p: Program):
+    def repair_strategy(self, survivors: list[Program]):
         """Assign p.strategy to each individual using SUS on improvement rates."""
-        if p.prev_fitness is None:
-            # First generation: uniform weights
-            weights = [1.0, 1.0, 1.0]
-        else:
-            pf = p.prev_fitness
-            cf = p.fitness
+        for p in survivors:
+            if p.prev_fitness is None:
+                # First generation: uniform weights
+                weights = [1.0, 1.0, 1.0]
+            else:
+                pf = p.prev_fitness
+                cf = p.fitness
 
-            def safe(key: str) -> float:
-                b = pf[key]
-                a = cf[key]
-                return cls.delta(b, a)
+                def safe(key: str) -> float:
+                    b = pf[key]
+                    a = cf[key]
+                    return self.delta(b, a)
 
-            delta_fail = safe("f_fail")
-            delta_time = safe("f_time")
-            delta_mem  = safe("f_mem")
-            weights = [
-                max(delta_fail + 1.0, 0.0),
-                max(delta_time + 1.0, 0.0),
-                max(delta_mem  + 1.0, 0.0),
-            ]
+                delta_fail = safe("f_fail")
+                delta_time = safe("f_time")
+                delta_mem  = safe("f_mem")
+                weights = [
+                    max(delta_fail + 1.0, 0.0),
+                    max(delta_time + 1.0, 0.0),
+                    max(delta_mem  + 1.0, 0.0),
+                ]
 
-        total = sum(weights)
-        if total == 0.0:
-            weights = [1.0, 1.0, 1.0]
-            total = 3.0
+            total = sum(weights)
+            if total == 0.0:
+                weights = [1.0, 1.0, 1.0]
+                total = 3.0
 
-        # SUS: single pointer
-        pointer = Randoms.uniform(0, total)
-        cumulative = 0.0
-        chosen = cls.STRATEGIES[0]
-        for strategy, w in zip(cls.STRATEGIES, weights):
-            cumulative += w
-            if pointer <= cumulative:
-                chosen = strategy
-                break
-        p.strategy = chosen
+            # SUS: single pointer
+            pointer = Randoms.uniform(0, total)
+            cumulative = 0.0
+            chosen = self.STRATEGIES[0]
+            for strategy, w in zip(self.STRATEGIES, weights):
+                cumulative += w
+                if pointer <= cumulative:
+                    chosen = strategy
+                    break
+            p.strategy = chosen
 
     # ------------------------------------------------------------------ #
     # Step 3: Parent Selection via Complementarity                       #
     # ------------------------------------------------------------------ #
 
-    @classmethod
-    def _compute_thresholds(cls, population: list[Program]) -> tuple[float, float]:
+    def _compute_thresholds(self, population: list[Program]) -> tuple[float, float]:
         """θ_time and θ_mem as population-wide median (per test case)."""
         times, mems = [], []
         for p in population:
@@ -124,9 +129,8 @@ class Selection:
         theta_time = statistics.median(times) if times else 0.0
         theta_mem  = statistics.median(mems)  if mems  else 0.0
         return theta_time, theta_mem
-
-    @classmethod    
-    def _weakness_set(cls,
+    
+    def _weakness_set(self,
        p: Program, strategy: str, theta_time: float, theta_mem: float
     ) -> set:
         """S1: test cases where p is weak according to strategy."""
@@ -145,9 +149,8 @@ class Selection:
                 s1.add(tc.id)
         return s1
 
-    @classmethod
     def _strength_set(
-        cls, p: Program, strategy: str, theta_time: float, theta_mem: float
+        self, p: Program, strategy: str, theta_time: float, theta_mem: float
     ) -> set:
         """S2: test cases where p is strong according to strategy."""
         if p.results is None:
@@ -165,9 +168,8 @@ class Selection:
                 s2.add(tc.id)
         return s2
 
-    @classmethod
     def _complementarity(
-        cls,
+        self,
         p1: Program,
         p2: Program,
         strategy: str,
@@ -175,15 +177,14 @@ class Selection:
         theta_mem: float,
     ) -> float:
         """Fraction of p1's weakness test cases that p2 handles well."""
-        s1 = cls._weakness_set(p1, strategy, theta_time, theta_mem)
+        s1 = self._weakness_set(p1, strategy, theta_time, theta_mem)
         if not s1:
             return 0.0
-        s2 = cls._strength_set(p2, strategy, theta_time, theta_mem)
+        s2 = self._strength_set(p2, strategy, theta_time, theta_mem)
         return len(s1 & s2) / len(s1)
 
-    @classmethod
     def _representative_testcase(
-        cls,
+        self,
         p1: Program,
         p2: Program,
         strategy: str,
@@ -191,8 +192,8 @@ class Selection:
         theta_mem: float,
     ) -> TestCase | None:
         """Select t* from S1 ∩ S2; None if intersection is empty."""
-        s1 = cls._weakness_set(p1, strategy, theta_time, theta_mem)
-        s2 = cls._strength_set(p2, strategy, theta_time, theta_mem)
+        s1 = self._weakness_set(p1, strategy, theta_time, theta_mem)
+        s2 = self._strength_set(p2, strategy, theta_time, theta_mem)
         overlap_ids = s1 & s2
         if not overlap_ids:
             return Randoms.choice(Tester.testcases)
@@ -216,11 +217,10 @@ class Selection:
         )
         return p1_by_id[best_id].testcase
     
-    @classmethod
-    def _get_pair(cls, p1: Program, candidates: list[Program], strategy: str, theta_time: float, theta_mem: float, n: int) -> Program:
+    def _get_pair(self, p1: Program, candidates: list[Program], strategy: str, theta_time: float, theta_mem: float, n: int) -> Program:
         # Score each candidate by complementarity
         scores = [
-            cls._complementarity(p1, p2, strategy, theta_time, theta_mem)
+            self._complementarity(p1, p2, strategy, theta_time, theta_mem)
             for p2 in candidates
         ]
 
@@ -244,73 +244,67 @@ class Selection:
                     break
         return p2
 
-    @classmethod
-    def build_pairs(
-        cls, population: list[Program]
+    def parent_pairs(
+        self, survivors: list[Program]
     ) -> list[tuple[Program, Program, TestCase | None]]:
         """Build (p1, p2, t*) pairs using complementarity rank sampling."""
-        theta_time, theta_mem = cls._compute_thresholds(population)
+        theta_time, theta_mem = self._compute_thresholds(survivors)
         pairs = []
-        pop_size = len(population)
+        pop_size = len(survivors)
 
-        Randoms.shuffle(population)  # Randomize order to avoid bias
-        for p1 in population:
+        Randoms.shuffle(survivors)  # Randomize order to avoid bias
+        for p1 in survivors:
             strategy = p1.strategy or "f_fail"
-            candidates = [p for p in population if p.id != p1.id]
+            candidates = [p for p in survivors if p.id != p1.id]
             if not candidates: continue
-            p2 = cls._get_pair(p1, candidates, strategy, theta_time, theta_mem, pop_size)
+            p2 = self._get_pair(p1, candidates, strategy, theta_time, theta_mem, pop_size)
             if not p2: continue
-            t_star = cls._representative_testcase(p1, p2, strategy, theta_time, theta_mem)
+            t_star = self._representative_testcase(p1, p2, strategy, theta_time, theta_mem)
             pairs.append((p1, p2, t_star))
             # Limit number of pairs to half the population size
             if len(pairs) >= pop_size // 2: break
         return pairs
     
-    @classmethod
-    def run(cls, population: list[Program], pop_size: int, selection: bool) -> list[tuple[Program, Program, TestCase | None]]:
+    def run(self, survivors: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
         """Run the full selection process and return (p1, p2, t*) pairs."""
-        fitnesses = [Fitness.evaluate(p) for p in population]
-        if selection: # Random selection
-            population = Randoms.sample(population, pop_size)
+        
+        if self.random_sel: # Random selection
+            
             pairs = []
-            for p1 in population:
-                p1.strategy = Randoms.choice(cls.STRATEGIES)
-                candidates = [p for p in population if p.id != p1.id]
+            for p1 in survivors:
+                p1.strategy = Randoms.choice(self.STRATEGIES)
+                candidates = [p for p in survivors if p.id != p1.id]
                 if not candidates: continue
                 candidates.append(None)
                 p2 = Randoms.choice(candidates)
                 if p2 is None: continue
                 t_star = Randoms.choice(Tester.testcases)
                 pairs.append((p1, p2, t_star))
-                # Limit number of pairs to half the population size
+                # Limit number of pairs to half the survivors size
                 if len(pairs) >= pop_size // 2: break
             return pairs
         
-        population = cls.survivor_selection(population, pop_size)
-        for p in population:
-            cls.repair_strategy(p)
-        return cls.build_pairs(population)
+        return self.parent_pairs(survivors)
     
     # ---------------------------------------------------------------- #
     # Reference selection                                              #
     # ---------------------------------------------------------------- #
     
-    @classmethod
-    def one(cls, buggy: Program, references: list[Program], selection: bool) -> Program:
+    def one(self, buggy: Program, references: list[Program]) -> Program:
         """Select a single reference program from the provided list."""
-        if selection: # Random selection
+        if self.random_sel: # Random selection
             return Randoms.choice(references)
-        cls.repair_strategy(buggy)
-        theta_time, theta_mem = cls._compute_thresholds(references)
-        p2 = cls._get_pair(buggy, references, buggy.strategy, theta_time, theta_mem, len(references)+1)
+        self.repair_strategy([buggy])
+        theta_time, theta_mem = self._compute_thresholds(references)
+        p2 = self._get_pair(buggy, references, buggy.strategy, theta_time, theta_mem, len(references)+1)
         return p2
 
     # ---------------------------------------------------------------- #
     # Final solution selection                                         #
     # ---------------------------------------------------------------- #
 
-    @classmethod
-    def prioritization(cls, population: list[Program]) -> Program | None:
+    @staticmethod
+    def prioritization(population: list[Program]) -> Program | None:
         """Pick the program with the smallest mean of min-max normalized (f_time, f_mem).
         Assumes all programs in population have already passed all test cases."""
         if not population:

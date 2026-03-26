@@ -15,6 +15,8 @@ class Models:
         
         cls.client = AsyncOpenAI(api_key=API_KEY, timeout=timeout)
         cls.model = model
+        if model.startswith("gpt-5"):
+            temperature = 1.0
         cls.temperature = temperature
         cls.timeout = timeout
     
