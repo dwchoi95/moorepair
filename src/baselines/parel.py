@@ -41,6 +41,10 @@ class PaREffiLearner:
         self.bm25 = BM25Okapi([
             self._anonymize_code(ref.code).split() 
             for ref in self.references])
+    
+    def _assign_patch_id(self, patch: Program) -> None:
+        self._patch_uid += 1
+        patch.id = f"pop_{self._patch_uid}"
         
     def _syntax_check(self, program: Program) -> bool:
         try:
@@ -151,7 +155,9 @@ class PaREffiLearner:
             for patch in efficients:
                 results = Tester.run(patch)
                 passed = Tester.is_all_pass(results)
-                if passed: solutions.append(patch)
+                if passed: 
+                    self._assign_patch_id(patch)
+                    solutions.append(patch)
                 self.logger.info(
                     f"EffiLearner: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
         return result

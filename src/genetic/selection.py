@@ -318,6 +318,7 @@ class Selection:
         if len(population) == 1:
             return population[0]
 
+        fitnesses = [Fitness.evaluate(p) for p in population]
         time_vals = [p.fitness["f_time"] for p in population]
         mem_vals  = [p.fitness["f_mem"]  for p in population]
 
