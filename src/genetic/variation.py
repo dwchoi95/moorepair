@@ -39,7 +39,7 @@ class Variation:
             total_memory_usage=results.mem_usage(),
             total_execution_time=results.exec_time(),
             max_memory_usage=results.mem_usage_max(),
-            line_profile_results=results.report_time(),
+            line_profiler_results=results.report_time(),
             memory_report=results.report_mem()
         )
         return await Models.run(system, user)
