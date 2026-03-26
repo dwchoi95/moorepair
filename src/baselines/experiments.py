@@ -15,8 +15,8 @@ from src.execution import Tester, Programs
 
 OVERALL_PATH = os.path.join("results", "overall.csv")
 OVERALL_COLS = [
-    "ProblemID", "LLM", "Approach", "#Gen", 
-    "#Buggy",  "#Fixed", "%RR", 
+    "ProblemID", "LLM", "Approach", "#Gen",
+    "Verdict", "#Buggy",  "#Fixed", "%RR",
     "ET(s)", "MU(MB)", "TMU(MB*s)",
     "ΔET(%)", "ΔMU(%)", "ΔTMU(%)",
 ]
@@ -42,22 +42,30 @@ class Experiments:
         self.approach = approach
 
     def __save(self, problemId: str, buggys: Programs, results: dict):
-        """Compute stats from results dict and append final-gen row to overall.csv."""
+        """Compute per-verdict stats and append to overall.csv."""
 
         N = self.generations if self.approach == "moorepair" else self.generations + 1
-        generation_stats = {
-            gen: {
-                'fixed': 0,
-                'ET': 0.0, 'MU': 0.0, 'TMU': 0.0,
-                'dET': 0.0, 'dMU': 0.0, 'dTMU': 0.0, 'delta_n': 0,
-            }
-            for gen in range(1, N + 1)
+
+        # Group buggys by verdict
+        verdict_buggys = {}  # verdict -> [buggy_id, ...]
+        for buggy in buggys:
+            v = buggy.meta.get("verdict", "UNKNOWN")
+            verdict_buggys.setdefault(v, []).append(buggy.id)
+
+        # Per (gen, verdict) stats
+        keys = [(gen, v) for gen in range(1, N + 1) for v in sorted(verdict_buggys.keys())]
+        stats = {
+            k: {'total': len(verdict_buggys[k[1]]), 'fixed': 0,
+                 'ET': 0.0, 'MU': 0.0, 'TMU': 0.0,
+                 'dET': 0.0, 'dMU': 0.0, 'dTMU': 0.0, 'delta_n': 0}
+            for k in keys
         }
 
         for b_id, gen_result in tqdm(results.items(), desc="Save", leave=False):
             if not gen_result:
                 continue
             buggy = buggys.get_prog_by_id(b_id)
+            v = buggy.meta.get("verdict", "UNKNOWN")
 
             buggy_results = Tester.run(buggy)
             buggy_et  = buggy_results.ET()
@@ -74,61 +82,59 @@ class Experiments:
                 patch_mu = patch_results.MU()
                 patch_tmu = patch_results.TMU()
 
-                generation_stats[gen]['fixed'] += 1
-                generation_stats[gen]['ET']  += patch_et
-                generation_stats[gen]['MU']  += patch_mu
-                generation_stats[gen]['TMU'] += patch_tmu
+                s = stats[(gen, v)]
+                s['fixed'] += 1
+                s['ET']  += patch_et
+                s['MU']  += patch_mu
+                s['TMU'] += patch_tmu
+                s['dET']  += ETC.divide(buggy_et - patch_et, buggy_et + patch_et) * 100
+                s['dMU']  += ETC.divide(buggy_mu - patch_mu, buggy_mu + patch_mu) * 100
+                s['dTMU'] += ETC.divide(buggy_tmu - patch_tmu, buggy_tmu + patch_tmu) * 100
+                s['delta_n'] += 1
 
-                generation_stats[gen]['dET']  += ETC.divide(
-                    buggy_et - patch_et,  buggy_et + patch_et) * 100
-                generation_stats[gen]['dMU']  += ETC.divide(
-                    buggy_mu - patch_mu,  buggy_mu + patch_mu) * 100
-                generation_stats[gen]['dTMU'] += ETC.divide(
-                    buggy_tmu - patch_tmu, buggy_tmu + patch_tmu) * 100
-                generation_stats[gen]['delta_n'] += 1
-
-        # Print per-gen table
-        total_bugs = len(buggys)
-        table = PrettyTable(OVERALL_COLS)
-        for gen in sorted(generation_stats.keys()):
-            stats = generation_stats[gen]
-            fixed = stats['fixed']
+        # Build rows
+        rows = []
+        for gen, v in keys:
+            s = stats[(gen, v)]
+            fixed = s['fixed']
+            total = s['total']
             n = max(fixed, 1)
-            dn = stats['delta_n']
-            mean_et  = ETC.divide(stats['ET'],  n)
-            mean_mu  = ETC.divide(stats['MU'],  n)
-            mean_tmu = ETC.divide(stats['TMU'], n)
-            mean_det  = f"{ETC.divide(stats['dET'],  dn):.2f}%" if dn > 0 else "N/A"
-            mean_dmu  = f"{ETC.divide(stats['dMU'],  dn):.2f}%" if dn > 0 else "N/A"
-            mean_dtmu = f"{ETC.divide(stats['dTMU'], dn):.2f}%" if dn > 0 else "N/A"
-            table.add_row([
+            dn = s['delta_n']
+            rows.append([
                 problemId,
                 self.llm,
                 self.approach,
                 gen,
-                total_bugs,
+                v,
+                total,
                 fixed,
-                f"{ETC.divide(fixed, total_bugs) * 100:.2f}%",
-                f"{mean_et:.4f}",
-                f"{mean_mu:.4f}",
-                f"{mean_tmu:.4f}",
-                mean_det,
-                mean_dmu,
-                mean_dtmu,
+                f"{ETC.divide(fixed, total) * 100:.2f}%",
+                f"{ETC.divide(s['ET'], n):.4f}",
+                f"{ETC.divide(s['MU'], n):.4f}",
+                f"{ETC.divide(s['TMU'], n):.4f}",
+                f"{ETC.divide(s['dET'], dn):.2f}%" if dn > 0 else "N/A",
+                f"{ETC.divide(s['dMU'], dn):.2f}%" if dn > 0 else "N/A",
+                f"{ETC.divide(s['dTMU'], dn):.2f}%" if dn > 0 else "N/A",
             ])
-        print(table)
 
-        # Append final-gen row to overall.csv
-        final_row = table._rows[-1] if table._rows else None
-        if final_row:
-            os.makedirs(os.path.dirname(OVERALL_PATH), exist_ok=True)
-            file_exists = os.path.exists(OVERALL_PATH) and os.path.getsize(OVERALL_PATH) > 0
-            with open(OVERALL_PATH, mode="a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                if not file_exists:
-                    writer.writerow(OVERALL_COLS)
-                writer.writerow(final_row)
-                
+        # Print transposed (one row per metric)
+        for row in rows:
+            table = PrettyTable(["Metric", "Value"])
+            table.align["Metric"] = "r"
+            table.align["Value"] = "l"
+            for col, val in zip(OVERALL_COLS, row):
+                table.add_row([col, val])
+            print(table)
+
+        # Append to overall.csv
+        os.makedirs(os.path.dirname(OVERALL_PATH), exist_ok=True)
+        file_exists = os.path.exists(OVERALL_PATH) and os.path.getsize(OVERALL_PATH) > 0
+        with open(OVERALL_PATH, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(OVERALL_COLS)
+            writer.writerows(rows)
+
     def __core(self, problem: str):
         assignment, timelimit, memlimit, buggys, references, testcases = \
             self.loader.run(problem)

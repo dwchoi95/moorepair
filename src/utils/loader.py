@@ -25,7 +25,8 @@ class Loader:
                     id=sub["id"], code=sub["code"], ext=sub["ext"]))
             else:
                 buggys.append(Program(
-                    id=sub["id"], code=sub["code"], ext=sub["ext"]))
+                    id=sub["id"], code=sub["code"], ext=sub["ext"],
+                    meta={"verdict": sub["status"]}))
         
         if self.sampling:
             sampler = Sampling(list(buggys))
