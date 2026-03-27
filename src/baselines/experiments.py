@@ -15,7 +15,7 @@ from src.execution import Tester, Programs
 
 OVERALL_PATH = os.path.join("results", "overall.csv")
 OVERALL_COLS = [
-    "ProblemID", "LLM", "Approach", "#Gen",
+    "ProblemID", "LLM", "Approach", "Selection", "#Gen",
     "Verdict", "#Buggy",  "#Fixed", "%RR",
     "ET(s)", "MU(MB)", "TMU(MB*s)",
     "ΔET(%)", "ΔMU(%)", "ΔTMU(%)",
@@ -104,6 +104,7 @@ class Experiments:
                 problemId,
                 self.llm,
                 self.approach,
+                "random" if self.selection else "NSGA-II/SUS/Rank",
                 gen,
                 v,
                 total,
