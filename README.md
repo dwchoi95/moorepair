@@ -1,58 +1,97 @@
 # MooRepair: Multi-Objective Optimization-based Program Repair for Programming Assignments
 
-## Dataset
-
-data.zip : The dataset from Refactory and AssignmentMender.
-
-```
-|-data
-    |-benchmark.txt
-    |-{problem}
-    |    |-dataset.json
-    |    |-log.json
-    |    |-results.json
-    |-...
-```
-
-> benchmark.txt : Information of each problem.
-> {problem} : Dataset folder of problem.
-> dataset.json : Dataset of problem which include submissions and set of test cases, etc.
-> log.json : log of MooRepair.
-> results.json : Each result of experiment.
+<!-- ![image](./overview.png) -->
+<div align="center">
+  <img src="./overview.png" alt="overview"
+       style="width:clamp(320px, 50%, 900px); height:auto; display:block;" />
+</div>
 
 ## Setup
 
 1. Environment
-   `python >= 3.12`
-2. Install library
+   `Ubuntu`
+   `python >= 3.13`
+
+2. (Optional) Virtual Environment
+   ```bash
+   python3 -m venv env
+   source env/bin/activate
+   ```
+
+3. Install Packages
 
    ```bash
    pip install -r requirements.txt
    ```
-3. Unzip Dataset
+
+4. Load Dataset
 
    ```bash
-   unzip data.zip
+   python dataset.py build --language "Python 3"
+   python dataset.py verify
+   python dataset.py summary
    ```
-4. Serve vllm
 
-   ```bash
-   vllm serve [model]
+5. LLM API Key Setting
+
+   Create a `.env` file in the project root:
    ```
+   OPENAI_API_KEY="your_api_key_here"
+   ```
+
 
 ## How to Run
+0. Fast Run
 
-1. Run all problems
-```bash
-python run.py -d data
-```
+   ```bash
+   python run.py -d data/670_B -s
+   ```
 
-## Run options
-- d : The path of dataset
-- t : The timeout for compile program, default is 1sec
-- a : The approach to run, e.g., 'zero', 'random', 'optimal', default is 'optimal'
-- g : Number of generations, default is 10
-- e : Number to execute approach, default is 1
-- r : Reset results of executions, default is false
-- m : Run multiple executions with multiprocessing, default is false
-- o : Select objective functions to considered, e.g., 'f1 f2 f3 f4 f5 f6', default is 'f1 f2 f3 f4 f5 f6'
+1. MooRepair (GPT-3.5-Turbo)
+
+   ```bash
+   python run.py -d data -a MooRepair -g 4 -p 6 -l gpt-3.5-turbo
+   ```
+
+2. MooRepair (GPT-5-nano)
+
+   ```bash
+   python run.py -d data -a MooRepair -g 4 -p 6 -l gpt-5-nano
+   ```
+
+3. PaR+EffiLearner (GPT-3.5-Turbo)
+
+   ```bash
+   python run.py -d data -a PaREL -g 5 -p 6 -l gpt-3.5-turbo
+   ```
+
+4. PaR+EffiLearner (GPT-5-nano)
+
+   ```bash
+   python run.py -d data -a PaREL -g 5 -p 6 -l gpt-5-nano
+   ```
+
+5. MooRepair: Random Selection (GPT-3.5-Turbo)
+
+   ```bash
+   python run.py -d data -a Random -g 4 -p 6 -l gpt-3.5-turbo
+   ```
+
+6. MooRepair: Random Selection (GPT-5-nano)
+
+   ```bash
+   python run.py -d data -a Random -g 4 -p 6 -l gpt-5-nano
+   ```
+
+## Run Options
+
+| Option | Long Option     | Description                                     | Default        |
+|--------|-----------------|-------------------------------------------------|----------------|
+| `-d`   | `--dataset`     | Path to dataset directory or JSON file          | (required)     |
+| `-a`   | `--approach`    | Approach to run: `PaREL`, `Random`, `MooRepair` | `MooRepair`    |
+| `-g`   | `--generations` | Number of generations                           | `4`            |
+| `-p`   | `--popsize`     | Population size                                 | `6`            |
+| `-l`   | `--llm`         | LLM model name                                  | `gpt-3.5-turbo`|
+| `-t`   | `--temperature` | LLM sampling temperature                        | `0.8`          |
+| `-s`   | `--sampling`    | Use 10% sampling of buggy programs              | `False`        |
+| `-r`   | `--reset`       | Reset experiments results                       | `False`        |

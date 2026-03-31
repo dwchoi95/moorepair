@@ -9,7 +9,7 @@ from prettytable import PrettyTable
 from src.execution.tester import Tester
 from src.utils import Loader
 
-class BenchmarkVerifier:
+class DatasetVerifier:
     @classmethod
     def run(cls, problem: str | None = None):
         paths = sorted(glob.glob(os.path.join("data", "*", "dataset.json")))
@@ -31,11 +31,11 @@ class BenchmarkVerifier:
 
         loader = Loader()
         for path in paths:
-            problemId, description, timelimit, memlimit, buggys, references, testcases = \
+            assignment, timelimit, memlimit, buggys, references, testcases = \
                 loader.run(path)
             Tester.init_globals(testcases, timelimit, memlimit)
             tot = len(buggys)+len(references)
-            pbar = tqdm(total=tot, desc=problemId)
+            pbar = tqdm(total=tot, desc=assignment['id'])
             mismatches = []
             stored = "failed"
             for bug in buggys:
@@ -83,8 +83,6 @@ class BenchmarkVerifier:
             with open(path, 'w') as f:
                 json.dump(dataset, f, indent=4)
 
-
-        print(f"\n── Overall {'─' * 50}")
         overview = PrettyTable(["Metric", "Value"])
         overview.align["Metric"] = "l"
         overview.align["Value"] = "r"

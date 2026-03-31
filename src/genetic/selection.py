@@ -19,8 +19,8 @@ class Selection:
 
     STRATEGIES = ["f_fail", "f_time", "f_mem"]
 
-    def __init__(self, selection: bool = False):
-        self.random_sel = selection
+    def __init__(self, rand: bool = False):
+        self.rand = rand
 
     def delta(self, before: float, after: float) -> float:
         """Improvement rate ∈ [-1, 1]; 0 when denominator is zero."""
@@ -40,7 +40,7 @@ class Selection:
 
         fitnesses = [Fitness.evaluate(p) for p in population]
 
-        if self.random_sel: # Random selection
+        if self.rand: # Random selection
             return Randoms.sample(population, pop_size)
             
         keys = [p.id for p in population]
@@ -268,7 +268,7 @@ class Selection:
     def run(self, survivors: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
         """Run the full selection process and return (p1, p2, t*) pairs."""
         
-        if self.random_sel: # Random selection
+        if self.rand: # Random selection
             
             pairs = []
             for p1 in survivors:
@@ -292,7 +292,7 @@ class Selection:
     
     def one(self, buggy: Program, references: list[Program]) -> Program:
         """Select a single reference program from the provided list."""
-        if self.random_sel: # Random selection
+        if self.rand: # Random selection
             return Randoms.choice(references)
         self.repair_strategy([buggy])
         theta_time, theta_mem = self._compute_thresholds(references)

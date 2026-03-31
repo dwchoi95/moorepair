@@ -1,7 +1,3 @@
-"""
-Build MooRepair-format benchmark from HuggingFace Codeforces datasets.
-"""
-
 import json
 import os
 from collections import defaultdict
@@ -14,7 +10,7 @@ from tqdm import tqdm
 load_dotenv()
 
 
-class BenchmarkBuilder:
+class DatasetBuilder:
     KEEP_VERDICT = {"OK", "WRONG_ANSWER", "TIME_LIMIT_EXCEEDED", "MEMORY_LIMIT_EXCEEDED"}
     GENERATED_TESTS_REPO = "open-r1/codeforces"
     _generated_tests_cache: dict[str, dict[str, list[dict]]] = {}
@@ -110,61 +106,6 @@ class BenchmarkBuilder:
         return problem_id.split("/", 1)[0]
 
     @classmethod
-    def _load_generated_tests_for_contest(
-        cls,
-        contest_id: str,
-    ) -> dict[str, list[dict]]:
-        if contest_id in cls._generated_tests_cache:
-            return cls._generated_tests_cache[contest_id]
-
-        parquet_uri = None
-        candidate_names = []
-        if contest_id.isdigit():
-            candidate_names.append(f"test_cases_{int(contest_id):04d}.parquet")
-        candidate_names.append(f"test_cases_{contest_id}.parquet")
-        for candidate_name in candidate_names:
-            candidate_uri = f"hf://datasets/{cls.GENERATED_TESTS_REPO}/generated_tests/{candidate_name}"
-            try:
-                import pyarrow.parquet as pq
-
-                pq.read_schema(candidate_uri)
-                parquet_uri = candidate_uri
-                break
-            except Exception:
-                continue
-
-        if parquet_uri is None:
-            cls._generated_tests_cache[contest_id] = {}
-            return cls._generated_tests_cache[contest_id]
-
-        import pyarrow.parquet as pq
-
-        schema_names = set(pq.read_schema(parquet_uri).names)
-        index_column = "test_case_i" if "test_case_i" in schema_names else "test_i"
-        columns = ["problem_id", "input", "output", index_column]
-        table = pq.read_table(parquet_uri, columns=columns)
-        rows = zip(
-            table.column("problem_id").to_pylist(),
-            table.column("input").to_pylist(),
-            table.column("output").to_pylist(),
-            table.column(index_column).to_pylist(),
-        )
-
-        grouped = defaultdict(list)
-        for row_problem_id, tc_input, tc_output, tc_index in rows:
-            grouped[str(row_problem_id)].append({
-                "input": "" if tc_input is None else str(tc_input),
-                "output": "" if tc_output is None else str(tc_output),
-                "test_case_i": int(tc_index),
-            })
-
-        cls._generated_tests_cache[contest_id] = {
-            problem_id: sorted(testcases, key=lambda testcase: testcase["test_case_i"])
-            for problem_id, testcases in grouped.items()
-        }
-        return cls._generated_tests_cache[contest_id]
-
-    @classmethod
     def extract_test_cases(
         cls,
         problem: dict,
@@ -181,20 +122,6 @@ class BenchmarkBuilder:
                 "input": str(testcase["input"]),
                 "output": str(testcase["output"]),
             })
-
-        # problem_id = str(problem.get("id") or "")
-        # contest_id = cls._contest_id(problem_id)
-        # if contest_id:
-        #     contest_tests = cls._load_generated_tests_for_contest(contest_id)
-        #     for testcase in contest_tests.get(problem_id, []):
-        #         key = (testcase["input"], testcase["output"])
-        #         if key in seen:
-        #             continue
-        #         seen.add(key)
-        #         merged.append({
-        #             "input": testcase["input"],
-        #             "output": testcase["output"],
-        #         })
 
         return [
             {"id": index, "input": testcase["input"], "output": testcase["output"]}
@@ -240,7 +167,7 @@ class BenchmarkBuilder:
         return True
 
     @classmethod
-    def write_benchmark(
+    def write_dataset(
         cls,
         groups: dict,
         problems: dict,
@@ -266,8 +193,6 @@ class BenchmarkBuilder:
                 for submission in submissions:
                     verdict_counts[submission["status"]] += 1
                     lang_counts[submission["ext"]] += 1
-
-        print(f"\n── Summary {'─' * 50}")
 
         overview = PrettyTable(["Metric", "Count"])
         overview.align["Metric"] = "l"
@@ -304,4 +229,4 @@ class BenchmarkBuilder:
     ) -> int:
         problems = cls.load_problems()
         groups = cls.load_submissions(set(problems.keys()), language)
-        return cls.write_benchmark(groups, problems, min_count)
+        return cls.write_dataset(groups, problems, min_count)

@@ -13,9 +13,9 @@ from src.utils import ETC, Loader
 from src.execution import Tester, Programs
 
 
-OVERALL_PATH = os.path.join("results", "overall.csv")
+OVERALL_PATH = "overall.csv"
 OVERALL_COLS = [
-    "ProblemID", "LLM", "Approach", "Selection", "#Gen",
+    "ProblemID", "LLM", "Approach", "#Gen",
     "Verdict", "#Buggy",  "#Fixed", "%RR",
     "ET(s)", "MU(MB)", "TMU(MB*s)",
     "ΔET(%)", "ΔMU(%)", "ΔTMU(%)",
@@ -24,27 +24,27 @@ OVERALL_COLS = [
 
 class Experiments:
     def __init__(self,
-        generations:int=4, pop_size:int=6, selection:bool=False,
-        llm:str="gpt-3.5-turbo",
-        temperature:float=0.8, sampling:bool=False,
-        approach:str="moorepair", reset:bool=False,
+        approach:str="moorepair", sampling:bool=False, 
+        generations:int=4, pop_size:int=6,
+        llm:str="gpt-3.5-turbo", temperature:float=0.8, 
+        reset:bool=False
     ):
         self.loader = Loader(sampling)
 
+        self.approach = approach
         self.generations = generations
         self.pop_size = pop_size
-        self.selection = selection
         self.llm = llm
         Models.set(model=llm, temperature=temperature)
         if not llm.startswith("gpt-"):
             Tokenizer.set(llm)
-        self.reset = reset
-        self.approach = approach
+        if reset and os.path.exists(OVERALL_PATH):
+            os.remove(OVERALL_PATH)
 
     def __save(self, problemId: str, buggys: Programs, results: dict):
         """Compute per-verdict stats and append to overall.csv."""
 
-        N = self.generations if self.approach == "moorepair" else self.generations + 1
+        N = self.generations + 1
 
         # Group buggys by verdict
         verdict_buggys = {}  # verdict -> [buggy_id, ...]
@@ -53,7 +53,7 @@ class Experiments:
             verdict_buggys.setdefault(v, []).append(buggy.id)
 
         # Per (gen, verdict) stats
-        keys = [(gen, v) for gen in range(1, N + 1) for v in sorted(verdict_buggys.keys())]
+        keys = [(gen, v) for gen in range(1, N) for v in sorted(verdict_buggys.keys())]
         stats = {
             k: {'total': len(verdict_buggys[k[1]]), 'fixed': 0,
                  'ET': 0.0, 'MU': 0.0, 'TMU': 0.0,
@@ -72,7 +72,7 @@ class Experiments:
             buggy_mu  = buggy_results.MU()
             buggy_tmu = buggy_results.TMU()
 
-            for gen in range(1, N + 1):
+            for gen in range(1, N):
                 patches = gen_result.get(gen, [])
                 if not patches:
                     continue
@@ -104,7 +104,6 @@ class Experiments:
                 problemId,
                 self.llm,
                 self.approach,
-                "random" if self.selection else "NSGA-II/SUS/Rank",
                 gen,
                 v,
                 total,
@@ -118,17 +117,44 @@ class Experiments:
                 f"{ETC.divide(s['dTMU'], dn):.2f}%" if dn > 0 else "N/A",
             ])
 
-        # Print transposed (one row per metric)
-        for row in rows:
-            table = PrettyTable(["Metric", "Value"])
-            table.align["Metric"] = "r"
-            table.align["Value"] = "l"
-            for col, val in zip(OVERALL_COLS, row):
-                table.add_row([col, val])
-            print(table)
+        # Print aggregated final-generation result (across all verdicts)
+        last_gen = self.generations
+        agg = {'total': 0, 'fixed': 0, 'ET': 0.0, 'MU': 0.0, 'TMU': 0.0,
+               'dET': 0.0, 'dMU': 0.0, 'dTMU': 0.0, 'delta_n': 0}
+        for v in sorted(verdict_buggys.keys()):
+            s = stats[(last_gen, v)]
+            agg['total']   += s['total']
+            agg['fixed']   += s['fixed']
+            agg['ET']      += s['ET']
+            agg['MU']      += s['MU']
+            agg['TMU']     += s['TMU']
+            agg['dET']     += s['dET']
+            agg['dMU']     += s['dMU']
+            agg['dTMU']    += s['dTMU']
+            agg['delta_n'] += s['delta_n']
+        fixed = agg['fixed']
+        total = agg['total']
+        n  = max(fixed, 1)
+        dn = agg['delta_n']
+        summary_row = [
+            problemId, self.llm, self.approach, last_gen, "ALL",
+            total, fixed,
+            f"{ETC.divide(fixed, total) * 100:.2f}%",
+            f"{ETC.divide(agg['ET'],  n):.4f}",
+            f"{ETC.divide(agg['MU'],  n):.4f}",
+            f"{ETC.divide(agg['TMU'], n):.4f}",
+            f"{ETC.divide(agg['dET'],  dn):.2f}%" if dn > 0 else "N/A",
+            f"{ETC.divide(agg['dMU'],  dn):.2f}%" if dn > 0 else "N/A",
+            f"{ETC.divide(agg['dTMU'], dn):.2f}%" if dn > 0 else "N/A",
+        ]
+        table = PrettyTable(["Metric", "Value"])
+        table.align["Metric"] = "r"
+        table.align["Value"] = "l"
+        for col, val in zip(OVERALL_COLS, summary_row):
+            table.add_row([col, val])
+        print(table)
 
         # Append to overall.csv
-        os.makedirs(os.path.dirname(OVERALL_PATH), exist_ok=True)
         file_exists = os.path.exists(OVERALL_PATH) and os.path.getsize(OVERALL_PATH) > 0
         with open(OVERALL_PATH, mode="a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -144,18 +170,16 @@ class Experiments:
 
         Tester.init_globals(testcases, timelimit, memlimit)
 
-        log_path = os.path.join('logs', problemId, self.llm, f'{self.approach}.log')
-        if self.approach == "moorepair":
-            moo_repair = MooRepair(buggys, references, assignment, self.selection, log_path)
-            results = moo_repair.run(self.generations, self.pop_size)
+        if self.approach == "PaREL":
+            parel = PaREffiLearner(buggys, references, assignment)
+            results = parel.run(self.generations, self.pop_size)
         else:
-            parel = PaREffiLearner(buggys, references, assignment, log_path)
-            results = parel.run(self.generations + 1, self.pop_size)
+            rand = True if self.approach == "Random" else False
+            moo_repair = MooRepair(buggys, references, assignment, rand)
+            results = moo_repair.run(self.generations, self.pop_size)
 
         self.__save(problemId, buggys, results)
 
     def run(self, problems: list) -> None:
-        if self.reset and os.path.isfile(OVERALL_PATH):
-            os.remove(OVERALL_PATH)
         for problem in problems:
             self.__core(problem)

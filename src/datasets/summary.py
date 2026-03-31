@@ -1,5 +1,3 @@
-"""Print a summary of the locally stored benchmark datasets."""
-
 import json
 import os
 from collections import defaultdict
@@ -7,7 +5,7 @@ from collections import defaultdict
 from prettytable import PrettyTable
 
 
-class BenchmarkSummary:
+class DatasetSummary:
     DATA_DIR = "data"
 
     @classmethod

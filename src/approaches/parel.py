@@ -1,47 +1,42 @@
 import ast
 import re
-import logging
-from pathlib import Path
 from tqdm import tqdm
 from rank_bm25 import BM25Okapi
 from codebleu import calc_codebleu
-from src.llms import Models, prompts
-from src.execution import Programs, Program, Tester, Status
+from src.genetic import Fitness, Variation
+from src.execution import Programs, Program, Tester
 from src.utils import ETC
 
 
-class PaR:
+class PaREffiLearner:
     def __init__(
         self,
         buggys: Programs,
         references: Programs,
-        description: str,
-        log_path: str = "logs/temp.log",
+        assignement: dict,
     ):
         self.buggys = buggys
         self.references = references
-        self.description = description
+        self.assignement = assignement
+        self.variation = Variation(assignement)
+        self._patch_uid = 0
 
-        log_path = Path(log_path)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        self.logger = logging.getLogger("PaR")
-        for h in self.logger.handlers[:]:
-            self.logger.removeHandler(h)
-            h.close()
-        self.logger.setLevel(logging.INFO)
-        fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-        fh.setLevel(logging.INFO)
-        fh.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-        self.logger.addHandler(fh)
-        self.logger.propagate = False
-        
         self.bm25 = BM25Okapi([
             self._anonymize_code(ref.code).split() 
             for ref in self.references])
+    
+    def _assign_patch_id(self, patch: Program) -> None:
+        self._patch_uid += 1
+        patch.id = f"pop_{self._patch_uid}"
         
+    def _syntax_check(self, program: Program) -> bool:
+        try:
+            ast.parse(program.code)
+            return True
+        except Exception: pass
+        return False
+    
     def _match_tc(self, buggy: Program, reference: Program) -> float:
-        """Test Cases Pass Match Score: 2 * clip / (count_correct + count_buggy)"""
         buggy_results = Tester.run(buggy)
         ref_results = Tester.run(reference)
         buggy_passed, _ = Tester.tests_split(buggy_results)
@@ -51,8 +46,6 @@ class PaR:
         return ETC.divide(2 * clip, denom)
 
     def _match_codebleu(self, buggy: str, reference: str) -> tuple[float, float]:
-        """Data-flow Match Score via CodeBLEU's dataflow_match."""
-        """AST Match Score via CodeBLEU's syntax_match."""
         scores = calc_codebleu(
             references=[reference],
             predictions=[buggy],
@@ -62,7 +55,6 @@ class PaR:
 
     @staticmethod
     def _anonymize_code(code: str) -> str:
-        """Replace variable names with generic names (v1, v2, ...) for BM25."""
         try:
             tree = ast.parse(code)
         except SyntaxError:
@@ -87,7 +79,6 @@ class PaR:
         return result
 
     def _bm25_anon(self, buggy: Program, reference: Program) -> float:
-        """Anonymous BM25 Score, normalized across all references."""
         anon_buggy = self._anonymize_code(buggy.code).split()
         scores = self.bm25.get_scores(anon_buggy)
         bm25_min, bm25_max = float(scores.min()), float(scores.max())
@@ -104,7 +95,6 @@ class PaR:
         return (float(scores[ref_idx]) - bm25_min) / (bm25_max - bm25_min)
 
     def _get_reference(self, buggy: Program) -> Program:
-        """Select the peer solution with the highest PSM score."""
         best_refer = None
         best_psm = -1.0
         for refer in self.references:
@@ -116,40 +106,35 @@ class PaR:
                 best_psm = psm
                 best_refer = refer
         return best_refer
-
-    async def _run_single(self, buggy: Program, generations:int=5) -> Program:
-        correct = None
-        self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
+    
+    def _run_single(self, buggy: Program, generations: int, pop_size: int) -> dict:
+        result = {}
+        solutions = []
+        Fitness.evaluate(buggy)
+        
         reference = self._get_reference(buggy)
         for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
-            self.logger.info(f"=== Generation {gen} ===")
-            patch = await Models.run(
-                system=prompts.PAR_SYSTEM,
-                user=prompts.PAR_USER.format(
-                    description=self.description,
-                    buggy_program=buggy.code,
-                    reference_program=reference.code,
-                )
-            )
-            if patch is None: continue
-            patch = Program(
-                id=buggy.id,
-                code=patch,
-                ext=buggy.ext,
-            )
-            results = Tester.run(patch)
-            passed = Tester.is_all_pass(results)
-            self.logger.info(
-                f"Patch: {Status.PASSED if passed else Status.FAILED}\n{patch.code}\n")
-            if passed:
-                correct = patch
-                break
-        return correct
-
-    async def run(self, generations: int = 30) -> Programs:
-        corrects = Programs()
+            result.setdefault(gen, solutions.copy())
+            patch = self.variation.correct(buggy, [reference])
+            if not patch: continue
+            patch = patch[0]
+            passed = False
+            if self._syntax_check(patch):
+                results = Tester.run(patch, profiling=True)
+                passed = Tester.is_all_pass(results)
+            if not passed: continue
+            valids = [patch] * pop_size
+            efficients = self.variation.efficient(valids)
+            for patch in efficients:
+                results = Tester.run(patch)
+                passed = Tester.is_all_pass(results)
+                if passed: 
+                    self._assign_patch_id(patch)
+                    solutions.append(patch)
+        return result
+                    
+    def run(self, generations: int = 5, pop_size: int = 6) -> dict:
+        results = {}
         for buggy in tqdm(self.buggys, desc="Buggy", position=0):
-            patch = await self._run_single(buggy, generations)
-            if patch is None: continue
-            corrects.append(patch)
-        return corrects
+            results[buggy.id] = self._run_single(buggy, generations, pop_size)
+        return results

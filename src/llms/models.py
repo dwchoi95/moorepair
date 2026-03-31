@@ -23,17 +23,7 @@ class Models:
     @classmethod
     def _post_process(cls, code: str) -> str:
         code = code.strip()
-
-        # 1) [PYTHON] ... [/PYTHON] 
-        tag_match = re.search(
-            r"\[PYTHON\]\s*\n?(.*?)\s*\[/PYTHON\]",
-            code,
-            flags=re.DOTALL,
-        )
-        if tag_match:
-            return tag_match.group(1).strip()
-
-        # 2) ```python ... ``` 
+        
         while code.startswith("```") and code.endswith("```"):
             m = re.search(
                 r"```(?:[a-zA-Z0-9_+-]+)?[\r\n]+(.*?)```",

@@ -2,7 +2,6 @@ import asyncio
 from tqdm.asyncio import tqdm as tqdm_async
 
 from ..execution import Program, TestCase, Tester
-from ..utils import Randoms
 from ..llms import prompts
 
 

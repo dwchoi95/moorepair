@@ -1,6 +1,4 @@
 import ast
-import logging
-from pathlib import Path
 from tqdm import tqdm
 
 from ..genetic import Selection, Variation, Fitness
@@ -13,28 +11,13 @@ class MooRepair:
         buggys: Programs,
         references: Programs,
         assignment: dict,
-        selection: bool,
-        log_path: str = "logs/temp.log",
+        rand: bool = False,
     ):
         self.buggys = buggys
         self.references = references
         self.variation = Variation(assignment)
-        self.selection = Selection(selection)
+        self.selection = Selection(rand)
         self._patch_uid = 0
-
-        log_path = Path(log_path)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        self.logger = logging.getLogger("MooRepair")
-        for h in self.logger.handlers[:]:
-            self.logger.removeHandler(h)
-            h.close()
-        self.logger.setLevel(logging.INFO)
-        fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-        fh.setLevel(logging.INFO)
-        fh.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-        self.logger.addHandler(fh)
-        self.logger.propagate = False
 
     def _assign_patch_id(self, patch: Program) -> None:
         self._patch_uid += 1
@@ -65,29 +48,23 @@ class MooRepair:
         return population
 
     def _termination(self, solutions: list[Program], b_fitness: dict) -> bool:
-        """Stop if any individual is fully correct AND faster AND lighter than buggy."""
         early_stop = False
         b_fail = b_fitness["f_fail"]
         b_time = b_fitness["f_time"]
         b_mem  = b_fitness["f_mem"]
 
-        for i, s in enumerate(solutions):
+        for s in solutions:
             s_fitness = Fitness.evaluate(s)
             s_fail = s_fitness["f_fail"]
             s_time = s_fitness["f_time"]
             s_mem  = s_fitness["f_mem"]
 
-            log = f"Patch {i}: CORR: {s_fail:.2f} | RUN: {s_time:.2f} | MEM: {s_mem:.2f}"
-            
             delta_fail = self.selection.delta(b_fail, s_fail)
             delta_time = self.selection.delta(b_time, s_time)
             delta_mem  = self.selection.delta(b_mem,  s_mem)
 
             if delta_fail == 1.0 and delta_time > 0 and delta_mem > 0:
-                log += f" >>> Early Stopped!"
                 early_stop = True
-            log += f"\n{s.code}\n"
-            self.logger.info(log)
         return early_stop
 
     def _run_single(self, buggy: Program, generations: int, pop_size: int) -> dict:
@@ -101,14 +78,12 @@ class MooRepair:
             if not Tester.is_all_pass(results): continue
             solutions.append(pop)
 
-        self.logger.info(f"Buggy: {buggy.id}\n{buggy.code}\n")
         for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
             if self._termination(solutions, buggy_fitness):
                 for remaining in range(gen, generations + 1):
                     result.setdefault(remaining, solutions.copy())
                 break
             result.setdefault(gen, solutions.copy())
-            self.logger.info(f"=== Generation {gen} ===")
 
             # Selection
             survivors = self.selection.survivor_selection(population, pop_size)

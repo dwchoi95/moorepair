@@ -1,12 +1,12 @@
 import argparse
 
-from src.benchmark import BenchmarkBuilder, BenchmarkSummary, BenchmarkVerifier
+from src.datasets import DatasetBuilder, DatasetSummary, DatasetVerifier
 
 
-class BenchmarkCLI:
+class DatasetCLI:
     @staticmethod
     def build_parser() -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser(description="Benchmark management entrypoint")
+        parser = argparse.ArgumentParser(description="Dataset management entrypoint")
         subparsers = parser.add_subparsers(dest="command", required=True)
 
         build_parser = subparsers.add_parser("build", help="Build benchmark datasets")
@@ -26,22 +26,22 @@ class BenchmarkCLI:
         args = parser.parse_args()
 
         if args.command == "build":
-            BenchmarkBuilder.run(
+            DatasetBuilder.run(
                 language=args.language,
                 min_count=args.min_count,
             )
             return
 
         if args.command == "verify":
-            BenchmarkVerifier.run(
+            DatasetVerifier.run(
                 problem=args.problem,
             )
             return
 
         if args.command == "summary":
-            BenchmarkSummary.run()
+            DatasetSummary.run()
             return
 
 
 if __name__ == "__main__":
-    BenchmarkCLI.run()
+    DatasetCLI.run()
