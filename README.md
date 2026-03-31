@@ -2,8 +2,9 @@
 
 <!-- ![image](./overview.png) -->
 <div align="center">
-  <img src="./overview.png" alt="overview"
-       style="width:clamp(320px, 50%, 900px); height:auto; display:block;" />
+<img src="https://anonymous.4open.science/r/moorepair-BA14/overview.png" 
+     alt="overview"
+     style="width:clamp(320px, 50%, 900px); height:auto; display:block;" />
 </div>
 
 ## Setup
