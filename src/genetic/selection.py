@@ -19,8 +19,19 @@ class Selection:
 
     STRATEGIES = ["f_fail", "f_time", "f_mem"]
 
-    def __init__(self, rand: bool = False):
+    def __init__(
+        self,
+        rand: bool = False,
+        rand_survivor: bool = False,
+        rand_strategy: bool = False,
+        rand_pairing: bool = False,
+    ):
+        # `rand` replaces ALL selection steps with random choices.
+        # The per-step flags replace only one step, for ablation.
         self.rand = rand
+        self.rand_survivor = rand or rand_survivor
+        self.rand_strategy = rand or rand_strategy
+        self.rand_pairing = rand or rand_pairing
 
     def delta(self, before: float, after: float) -> float:
         """Improvement rate ∈ [-1, 1]; 0 when denominator is zero."""
@@ -40,7 +51,7 @@ class Selection:
 
         fitnesses = [Fitness.evaluate(p) for p in population]
 
-        if self.rand: # Random selection
+        if self.rand_survivor: # Random selection
             return Randoms.sample(population, pop_size)
             
         keys = [p.id for p in population]
@@ -75,6 +86,9 @@ class Selection:
     def repair_strategy(self, survivors: list[Program]):
         """Assign p.strategy to each individual using SUS on improvement rates."""
         for p in survivors:
+            if self.rand_strategy: # Random strategy assignment
+                p.strategy = Randoms.choice(self.STRATEGIES)
+                continue
             if p.prev_fitness is None:
                 # First generation: uniform weights
                 weights = [1.0, 1.0, 1.0]
@@ -90,10 +104,12 @@ class Selection:
                 delta_fail = safe("f_fail")
                 delta_time = safe("f_time")
                 delta_mem  = safe("f_mem")
+                # Objectives with SMALLER recent improvement get LARGER
+                # weights, so the search focuses on lagging objectives.
                 weights = [
-                    max(delta_fail + 1.0, 0.0),
-                    max(delta_time + 1.0, 0.0),
-                    max(delta_mem  + 1.0, 0.0),
+                    max(1.0 - delta_fail, 0.0),
+                    max(1.0 - delta_time, 0.0),
+                    max(1.0 - delta_mem,  0.0),
                 ]
 
             total = sum(weights)
@@ -248,9 +264,22 @@ class Selection:
         self, survivors: list[Program]
     ) -> list[tuple[Program, Program, TestCase | None]]:
         """Build (p1, p2, t*) pairs using complementarity rank sampling."""
-        theta_time, theta_mem = self._compute_thresholds(survivors)
         pairs = []
         pop_size = len(survivors)
+
+        if self.rand_pairing: # Random pairing
+            Randoms.shuffle(survivors)
+            for p1 in survivors:
+                candidates = [p for p in survivors if p.id != p1.id]
+                if not candidates: continue
+                p2 = Randoms.choice(candidates)
+                t_star = Randoms.choice(Tester.testcases)
+                pairs.append((p1, p2, t_star))
+                # Limit number of pairs to half the population size
+                if len(pairs) >= pop_size // 2: break
+            return pairs
+
+        theta_time, theta_mem = self._compute_thresholds(survivors)
 
         Randoms.shuffle(survivors)  # Randomize order to avoid bias
         for p1 in survivors:
@@ -265,34 +294,13 @@ class Selection:
             if len(pairs) >= pop_size // 2: break
         return pairs
     
-    def run(self, survivors: list[Program], pop_size: int) -> list[tuple[Program, Program, TestCase | None]]:
-        """Run the full selection process and return (p1, p2, t*) pairs."""
-        
-        if self.rand: # Random selection
-            
-            pairs = []
-            for p1 in survivors:
-                p1.strategy = Randoms.choice(self.STRATEGIES)
-                candidates = [p for p in survivors if p.id != p1.id]
-                if not candidates: continue
-                candidates.append(None)
-                p2 = Randoms.choice(candidates)
-                if p2 is None: continue
-                t_star = Randoms.choice(Tester.testcases)
-                pairs.append((p1, p2, t_star))
-                # Limit number of pairs to half the survivors size
-                if len(pairs) >= pop_size // 2: break
-            return pairs
-        
-        return self.parent_pairs(survivors)
-    
     # ---------------------------------------------------------------- #
     # Reference selection                                              #
     # ---------------------------------------------------------------- #
     
     def one(self, buggy: Program, references: list[Program]) -> Program:
         """Select a single reference program from the provided list."""
-        if self.rand: # Random selection
+        if self.rand_pairing: # Random selection
             return Randoms.choice(references)
         self.repair_strategy([buggy])
         theta_time, theta_mem = self._compute_thresholds(references)

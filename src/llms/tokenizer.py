@@ -1,9 +1,16 @@
 from transformers import AutoTokenizer
 
 class Tokenizer:
+    tokenizer = None
+
     @classmethod
     def set(cls, model_name:str):
-        cls.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+        # LiteLLM model names (e.g., "ollama/codellama") are not HF repo
+        # ids; skip silently when no matching tokenizer exists
+        try:
+            cls.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+        except Exception:
+            cls.tokenizer = None
         
     @classmethod
     def parse(cls, text:str) -> list[int]:

@@ -158,19 +158,32 @@ class Variation:
         pbar.close()
         return programs
     
-    async def _run_variation_async(self, pairs: list[tuple]) -> list[Program]:
-        """Generate one crossover + one mutation offspring per pair."""
+    async def _run_variation_async(
+        self, pairs: list[tuple], crossover: bool = True, mutation: bool = True
+    ) -> list[Program]:
+        """Generate one crossover + one mutation offspring per pair.
+        When a single operator is disabled (ablation), the remaining
+        operator is applied twice to keep the LLM call budget equal."""
         tasks = []
 
         for p1, p2, t_star in pairs:
             if t_star is None:
                 continue
-            # Crossover task
-            tasks.append(asyncio.create_task(
-                self._crossover_prompt(p1, p2, t_star)))
-            # Mutation task
-            tasks.append(asyncio.create_task(
-                self._mutation_prompt(p1, t_star)))
+            do_cross, do_mut = crossover, mutation
+            # Crossover between (normalized-)identical parents is a no-op;
+            # spend the call on a second mutation instead
+            if do_cross and do_mut and p1 == p2:
+                do_cross = False
+            repeat = 1 if (do_cross and do_mut) else 2
+            for _ in range(repeat):
+                # Crossover task
+                if do_cross:
+                    tasks.append(asyncio.create_task(
+                        self._crossover_prompt(p1, p2, t_star)))
+                # Mutation task
+                if do_mut:
+                    tasks.append(asyncio.create_task(
+                        self._mutation_prompt(p1, t_star)))
 
         programs = []
         pbar = tqdm_async(total=len(tasks), desc="Variation", leave=False, position=2)
@@ -212,7 +225,8 @@ class Variation:
         loop = self._asyncio_loop()
         return loop.run_until_complete(self._run_efficient_async(corrects))
 
-    def run(self, pairs: list[tuple]) -> list[Program]:
+    def run(self, pairs: list[tuple], crossover: bool = True, mutation: bool = True) -> list[Program]:
         """Generate offspring from (p1, p2, t*) pairs."""
         loop = self._asyncio_loop()
-        return loop.run_until_complete(self._run_variation_async(pairs))
+        return loop.run_until_complete(
+            self._run_variation_async(pairs, crossover, mutation))

@@ -288,7 +288,11 @@ class Tester:
     def _run_cache(cls, code: str, profiling: bool = False) -> Results:
         args = [(code, tc, profiling) for tc in cls.testcases]
         processes = min(len(args), multiprocessing.cpu_count())
-        with multiprocessing.Pool(processes=processes) as pool:
+        # Fork context so pool workers inherit Tester's class state
+        # (testcases/timelimit/memlimit); macOS defaults to "spawn",
+        # which would start workers without init_globals applied
+        ctx = multiprocessing.get_context("fork")
+        with ctx.Pool(processes=processes) as pool:
             results = pool.map(cls._validation, args)
         return Results(results)
 

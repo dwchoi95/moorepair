@@ -1,5 +1,6 @@
 import ast
 import re
+import time
 from tqdm import tqdm
 from rank_bm25 import BM25Okapi
 from codebleu import calc_codebleu
@@ -19,6 +20,12 @@ class PaREffiLearner:
         self.references = references
         self.assignement = assignement
         self.variation = Variation(assignement)
+        # PaREL (PaR + EffiLearner) outputs
+        self.times = {}        # buggy_id -> {gen: elapsed seconds}
+        # PaR-only intermediate outputs, recorded in the same run
+        # so the PaR baseline costs no extra LLM calls
+        self.par_results = {}  # buggy_id -> {gen: [patches]}
+        self.par_times = {}    # buggy_id -> {gen: elapsed seconds w/o EffiLearner}
         self._patch_uid = 0
 
         self.bm25 = BM25Okapi([
@@ -109,28 +116,49 @@ class PaREffiLearner:
     
     def _run_single(self, buggy: Program, generations: int, pop_size: int) -> dict:
         result = {}
+        par_result = {}
+        times = {}
+        par_times = {}
         solutions = []
+        par_solutions = []
+        start = time.perf_counter()
+        effi_overhead = 0.0  # time spent in the EffiLearner stage
         Fitness.evaluate(buggy)
-        
+
         reference = self._get_reference(buggy)
+        # result[gen] holds the solutions found AFTER iteration gen, so
+        # every LLM call contributes to a reported snapshot.
+        # Each iteration makes (1 + k) calls with k = pop_size - 1, i.e.
+        # pop_size calls per iteration — the same budget as MooRepair.
         for gen in tqdm(range(1, generations + 1), desc="Generation", position=1, leave=False):
-            result.setdefault(gen, solutions.copy())
             patch = self.variation.correct(buggy, [reference])
-            if not patch: continue
-            patch = patch[0]
+            patch = patch[0] if patch else None
             passed = False
-            if self._syntax_check(patch):
+            if patch and self._syntax_check(patch):
                 results = Tester.run(patch, profiling=True)
                 passed = Tester.is_all_pass(results)
-            if not passed: continue
-            valids = [patch] * pop_size
-            efficients = self.variation.efficient(valids)
-            for patch in efficients:
-                results = Tester.run(patch)
-                passed = Tester.is_all_pass(results)
-                if passed: 
-                    self._assign_patch_id(patch)
-                    solutions.append(patch)
+            if passed:
+                # PaR-only baseline: the correct patch before EffiLearner
+                self._assign_patch_id(patch)
+                par_solutions.append(patch)
+                # EffiLearner stage
+                effi_start = time.perf_counter()
+                valids = [patch] * (pop_size - 1)
+                efficients = self.variation.efficient(valids)
+                for patch in efficients:
+                    results = Tester.run(patch)
+                    if Tester.is_all_pass(results):
+                        self._assign_patch_id(patch)
+                        solutions.append(patch)
+                effi_overhead += time.perf_counter() - effi_start
+            result.setdefault(gen, solutions.copy())
+            par_result.setdefault(gen, par_solutions.copy())
+            elapsed = time.perf_counter() - start
+            times.setdefault(gen, elapsed)
+            par_times.setdefault(gen, elapsed - effi_overhead)
+        self.times[buggy.id] = times
+        self.par_times[buggy.id] = par_times
+        self.par_results[buggy.id] = par_result
         return result
                     
     def run(self, generations: int = 5, pop_size: int = 6) -> dict:
