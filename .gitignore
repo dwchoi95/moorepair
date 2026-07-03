@@ -158,3 +158,5 @@ EvoFix.md
 test.ipynb
 paper/
 docs/
+*.pdf
+overall_*.csv

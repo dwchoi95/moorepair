@@ -84,6 +84,6 @@
 | `no_crossover`  | Mutation-only variation (operator applied twice, budget-matched) |
 | `no_mutation`   | Crossover-only variation (operator applied twice, budget-matched) |
 | `rand_survivor` | NSGA-II survivor selection → random sampling                 |
-| `rand_strategy` | SUS repair-strategy assignment → random strategy             |
+| `rand_strategy` | Roulette-wheel repair-strategy assignment → random strategy  |
 | `rand_pairing`  | Complementarity parent pairing → random pairing              |
 | `no_early_stop` | Early termination criterion disabled                         |

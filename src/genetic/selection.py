@@ -5,40 +5,63 @@ from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.core.population import Population
 
-from .fitness import Fitness
 from ..execution import Program, TestCase, Status, Tester
 from ..utils import ETC, Randoms
 
 class Selection:
     """EvoFix three-step selection.
 
-    Step 1 – survivor_selection: NSGA-II on (f_fail, f_time, f_mem)
-    Step 2 – repair_strategy:    SUS based on per-objective improvement rates
+    Step 1 – survivor_selection: NSGA-II on (f_fail, f_ted, f_time, f_mem)
+    Step 2 – repair_strategy:    Roulette wheel selection on improvement rates → p.strategy
     Step 3 – parent_pairs:       complementarity-based rank sampling → (p1, p2, t*)
     """
 
     STRATEGIES = ["f_fail", "f_time", "f_mem"]
 
-    def __init__(
-        self,
-        rand: bool = False,
-        rand_survivor: bool = False,
-        rand_strategy: bool = False,
-        rand_pairing: bool = False,
-    ):
-        # `rand` replaces ALL selection steps with random choices.
-        # The per-step flags replace only one step, for ablation.
-        self.rand = rand
-        self.rand_survivor = rand or rand_survivor
-        self.rand_strategy = rand or rand_strategy
-        self.rand_pairing = rand or rand_pairing
-
+    def __init__(self, fitness=None, ablation:str=None):
+        self.fitness = fitness
+        self.ablation = ablation
+        
     def delta(self, before: float, after: float) -> float:
-        """Improvement rate ∈ [-1, 1]; 0 when denominator is zero."""
         denom = before + after
         if denom == 0.0:
             return 0.0
         return (before - after) / denom
+
+    def _improvement_rate(self, key: str, before: float, after: float) -> float:
+        denom = before + after
+        if denom == 0.0:
+            return 0.0
+        return (before - after) / denom
+
+    def _strategy_weights(self, program: Program) -> list[float]:
+        if program.prev_fitness is None or program.fitness is None:
+            return [1.0] * len(self.STRATEGIES)
+
+        prev = program.prev_fitness
+        curr = program.fitness
+        if any(key not in prev or key not in curr for key in self.STRATEGIES):
+            return [1.0] * len(self.STRATEGIES)
+
+        improvement_rates = [
+            self._improvement_rate(key, prev[key], curr[key])
+            for key in self.STRATEGIES
+        ]
+        return [max(1.0 - rate, 0.0) for rate in improvement_rates]
+
+    def _roulette_strategy(self, weights: list[float]) -> str:
+        total = sum(weights)
+        if total <= 0.0:
+            weights = [1.0] * len(self.STRATEGIES)
+            total = float(len(self.STRATEGIES))
+
+        pointer = Randoms.uniform(0.0, total)
+        cumulative = 0.0
+        for strategy, weight in zip(self.STRATEGIES, weights):
+            cumulative += weight
+            if pointer <= cumulative:
+                return strategy
+        return self.STRATEGIES[-1]
 
     # ------------------------------------------------------------------ #
     # Step 1: Survivor Selection (NSGA-II)                               #
@@ -49,9 +72,8 @@ class Selection:
         if len(population) <= pop_size:
             return population
 
-        fitnesses = [Fitness.evaluate(p) for p in population]
-
-        if self.rand_survivor: # Random selection
+        # Random selection
+        if self.ablation == "random" or self.ablation == "rand_survivor":
             return Randoms.sample(population, pop_size)
             
         keys = [p.id for p in population]
@@ -59,6 +81,7 @@ class Selection:
             [
                 [
                     p.fitness["f_fail"],
+                    p.fitness["f_ted"],
                     p.fitness["f_time"],
                     p.fitness["f_mem"],
                 ]
@@ -70,7 +93,7 @@ class Selection:
         X = np.zeros((len(keys), 1))
         pop_pymoo = Population.new("X", X, "F", F)
         pop_pymoo.set("key", np.array(keys, dtype=object))
-        problem = Problem(n_var=1, n_obj=3, xl=np.array([0.0]), xu=np.array([1.0]))
+        problem = Problem(n_var=1, n_obj=4, xl=np.array([0.0]), xu=np.array([1.0]))
 
         algo = NSGA2(pop_size=pop_size)
         n_survive = min(pop_size, len(pop_pymoo))
@@ -80,53 +103,17 @@ class Selection:
         return [p for p in population if p.id in selected_ids]
 
     # ------------------------------------------------------------------ #
-    # Step 2: Repair Strategy Selection via SUS                          #
+    # Step 2: Repair Strategy Selection via RWS                          #
     # ------------------------------------------------------------------ #
 
     def repair_strategy(self, survivors: list[Program]):
-        """Assign p.strategy to each individual using SUS on improvement rates."""
+        """Assign p.strategy using roulette wheel selection on improvement rates."""
         for p in survivors:
-            if self.rand_strategy: # Random strategy assignment
+            # Random strategy assignment
+            if self.ablation == "random" or self.ablation == "rand_strategy":
                 p.strategy = Randoms.choice(self.STRATEGIES)
                 continue
-            if p.prev_fitness is None:
-                # First generation: uniform weights
-                weights = [1.0, 1.0, 1.0]
-            else:
-                pf = p.prev_fitness
-                cf = p.fitness
-
-                def safe(key: str) -> float:
-                    b = pf[key]
-                    a = cf[key]
-                    return self.delta(b, a)
-
-                delta_fail = safe("f_fail")
-                delta_time = safe("f_time")
-                delta_mem  = safe("f_mem")
-                # Objectives with SMALLER recent improvement get LARGER
-                # weights, so the search focuses on lagging objectives.
-                weights = [
-                    max(1.0 - delta_fail, 0.0),
-                    max(1.0 - delta_time, 0.0),
-                    max(1.0 - delta_mem,  0.0),
-                ]
-
-            total = sum(weights)
-            if total == 0.0:
-                weights = [1.0, 1.0, 1.0]
-                total = 3.0
-
-            # SUS: single pointer
-            pointer = Randoms.uniform(0, total)
-            cumulative = 0.0
-            chosen = self.STRATEGIES[0]
-            for strategy, w in zip(self.STRATEGIES, weights):
-                cumulative += w
-                if pointer <= cumulative:
-                    chosen = strategy
-                    break
-            p.strategy = chosen
+            p.strategy = self._roulette_strategy(self._strategy_weights(p))
 
     # ------------------------------------------------------------------ #
     # Step 3: Parent Selection via Complementarity                       #
@@ -218,7 +205,7 @@ class Selection:
         p1_by_id = {tr.testcase.id: tr for tr in p1.results if tr.result}
         p2_by_id = {tr.testcase.id: tr for tr in p2.results if tr.result}
 
-        if strategy == "f_fail":
+        if strategy in {"f_fail", "f_ted"}:
             tc_id = Randoms.choice(list(overlap_ids))
             return p1_by_id[tc_id].testcase
 
@@ -267,7 +254,7 @@ class Selection:
         pairs = []
         pop_size = len(survivors)
 
-        if self.rand_pairing: # Random pairing
+        if self.ablation == "random" or self.ablation == "rand_pairing": # Random pairing
             Randoms.shuffle(survivors)
             for p1 in survivors:
                 candidates = [p for p in survivors if p.id != p1.id]
@@ -283,7 +270,7 @@ class Selection:
 
         Randoms.shuffle(survivors)  # Randomize order to avoid bias
         for p1 in survivors:
-            strategy = p1.strategy or "f_fail"
+            strategy = p1.strategy
             candidates = [p for p in survivors if p.id != p1.id]
             if not candidates: continue
             p2 = self._get_pair(p1, candidates, strategy, theta_time, theta_mem, pop_size)
@@ -293,19 +280,6 @@ class Selection:
             # Limit number of pairs to half the population size
             if len(pairs) >= pop_size // 2: break
         return pairs
-    
-    # ---------------------------------------------------------------- #
-    # Reference selection                                              #
-    # ---------------------------------------------------------------- #
-    
-    def one(self, buggy: Program, references: list[Program]) -> Program:
-        """Select a single reference program from the provided list."""
-        if self.rand_pairing: # Random selection
-            return Randoms.choice(references)
-        self.repair_strategy([buggy])
-        theta_time, theta_mem = self._compute_thresholds(references)
-        p2 = self._get_pair(buggy, references, buggy.strategy, theta_time, theta_mem, len(references)+1)
-        return p2
 
     # ---------------------------------------------------------------- #
     # Final solution selection                                         #
@@ -320,7 +294,6 @@ class Selection:
         if len(population) == 1:
             return population[0]
 
-        fitnesses = [Fitness.evaluate(p) for p in population]
         time_vals = [p.fitness["f_time"] for p in population]
         mem_vals  = [p.fitness["f_mem"]  for p in population]
 

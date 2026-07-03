@@ -200,6 +200,9 @@ class Results:
     def delete(self, testcase:TestCase):
         self.ts = [tr for tr in self.ts if tr.testcase.id != testcase.id]
     
+    def copy(self) -> 'Results':
+        return Results(self.ts.copy())
+    
     def exec_time(self) -> float:
         total_exec_time = []
         for tr in self.ts:

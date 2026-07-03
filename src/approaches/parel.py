@@ -123,7 +123,7 @@ class PaREffiLearner:
         par_solutions = []
         start = time.perf_counter()
         effi_overhead = 0.0  # time spent in the EffiLearner stage
-        Fitness.evaluate(buggy)
+        Fitness(buggy)  # evaluates the buggy (sets buggy.fitness) for baseline metrics
 
         reference = self._get_reference(buggy)
         # result[gen] holds the solutions found AFTER iteration gen, so

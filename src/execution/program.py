@@ -9,9 +9,9 @@ class Program:
     ext:str = field(metadata={"desc":"File extension indicating the programming language"})
     results:Results = field(default=None, metadata={"desc":"Run Results after execution"})
     meta:dict = field(default_factory=dict, metadata={"desc":"Additional metadata"})
-    fitness:dict = field(default=None, metadata={"desc":"Current fitness {f_fail, f_time, f_mem}"})
+    fitness:dict = field(default=None, metadata={"desc":"Current fitness {f_fail, f_ted, f_time, f_mem}"})
     prev_fitness:dict = field(default=None, metadata={"desc":"Previous generation fitness for Δ calculation"})
-    strategy:str = field(default=None, metadata={"desc":"Edit strategy assigned by SUS: f_fail | f_time | f_mem"})
+    strategy:str = field(default=None, metadata={"desc":"Edit strategy assigned by RWS: f_fail | f_ted | f_time | f_mem"})
     
     def __hash__(self):
         from ..utils import ETC
@@ -22,6 +22,18 @@ class Program:
             return False
         from ..utils import ETC
         return ETC.normalize_code(self.code) == ETC.normalize_code(other.code)
+    
+    def copy(self) -> 'Program':
+        return Program(
+            id=self.id,
+            code=self.code,
+            ext=self.ext,
+            results=self.results.copy() if self.results else None,
+            meta=self.meta.copy(),
+            fitness=self.fitness.copy() if self.fitness else None,
+            prev_fitness=self.prev_fitness.copy() if self.prev_fitness else None,
+            strategy=self.strategy
+        )
     
     
 class Programs:
